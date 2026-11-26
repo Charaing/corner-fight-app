@@ -212,7 +212,7 @@ def parse_fighter(h):
                 "rd": text(tds[4]),
                 "time": text(tds[5]),
             })
-    f["hist"] = hist[:30]
+    f["hist"] = hist
     return f
 
 
@@ -245,21 +245,26 @@ def main():
         e["fights"] = parse_event(h) if h else (prev or {}).get("fights", [])
         print("event", e["date"], e["name"], len(e["fights"]))
 
-    # 최근 1년 + 예정 대회 출전 선수의 상세 기록
+    # 블랙컴뱃에 나온 모든 선수의 상세 기록.
+    # 최근 1년 안에 뛴 선수는 7일마다, 나머지는 60일마다 다시 받습니다. 처음 보는 선수가 먼저입니다.
     year_cut = (NOW - timedelta(days=365)).strftime("%Y-%m-%d")
-    want = []
+    want, active = [], set()
     for e in sorted(events, key=lambda x: x["date"], reverse=True):
-        if e["date"] < year_cut:
-            continue
         for f in e["fights"]:
             for s in (f["a"], f["b"]):
-                if s["fid"] and s["fid"] not in want:
+                if not s["fid"]:
+                    continue
+                if e["date"] >= year_cut:
+                    active.add(s["fid"])
+                if s["fid"] not in want:
                     want.append(s["fid"])
+    want.sort(key=lambda k: (k in fighters, k not in active))
     fetched = 0
     week = (NOW - timedelta(days=7)).isoformat()
+    two_months = (NOW - timedelta(days=60)).isoformat()
     for k in want:
         cur = fighters.get(k)
-        if cur and cur.get("at", "") > week:
+        if cur and cur.get("at", "") > (week if k in active else two_months):
             continue
         if fetched >= MAX_FIGHTER_FETCH:
             break

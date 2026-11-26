@@ -155,3 +155,7 @@ window.ESPN_IDS = {
 
 /* 일정 탭 맨 위 포스터에 고정할 매치 (다가오는 경기에 있으면 우선 표시) */
 window.FEATURED = [ ['Alex Pereira', 'Sergei Pavlovich'] ];
+
+/* 블랙컴뱃 선수 한글 이름 바로잡기: 영문 표기 → 한글. 자동 변환이 틀린 선수만 여기에 적어 주세요.
+   예: 'Gi Bum Moon': '문기범' */
+window.BC_KO = {};

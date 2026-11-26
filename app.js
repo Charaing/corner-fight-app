@@ -254,9 +254,36 @@ async function loadBC(force){
     })));
     BC.evs = (j.events||[]).map(normBC).filter(e => e.fights.length).map(put);
     BC.evs.forEach(e => e.fights.forEach(f => [f.a, f.b].forEach(x => x.name !== '미정' && indexPerson(x, e.date))));
-    BC.at = Date.now(); indexChamps(); return BC.evs;
+    BC.at = Date.now(); KO_CACHE.clear(); indexChamps(); indexBCPeople(); return BC.evs;
   })();
   try { return await BC.p; } finally { BC.p = null; }
+}
+
+/* 블랙컴뱃 안에서의 성적 · 유명 선수 판단 · 주 체급 */
+const BCI = new Map();
+const bcInfo = n => BCI.get(keyOf(n));
+function indexBCPeople(){
+  BCI.clear();
+  const champs = new Set(bcChamps().map(c => keyOf(c.name)));
+  const evs = BC.evs.slice().sort((a,b) => b.date.localeCompare(a.date));
+  evs.forEach(e => e.fights.forEach(f => [f.a, f.b].forEach(x => {
+    if (!x.name || x.name === '미정') return;
+    const k = keyOf(x.name), op = x === f.a ? f.b : f.a;
+    const i = BCI.get(k) || BCI.set(k, { name:x.name, fid:x.fid, w:0, l:0, d:0, tw:0, tf:0, last:e.date, wc:'', wcs:[] }).get(k);
+    if (f.done) { if (x.w) i.w++; else if (op.w) i.l++; else if (f.method !== 'NC') i.d++; }
+    if (f.ttl) { i.tf++; if (x.w) i.tw++; }
+    if (BC_ORDER.includes(f.wc)) i.wcs.push(f.wc);
+  })));
+  BCI.forEach((i, k) => {
+    const p = BC.fighters[i.fid] || {};
+    i.nick = p.nick || ''; i.p = p;
+    i.wc = i.wcs[0] || (BC_ORDER.includes(p.cls) ? p.cls : '') || p.cls || '기타';
+    i.champ = champs.has(k);
+    i.tag = i.champ ? '챔피언' : i.tw ? '전 챔피언' : i.tf ? '타이틀 도전' : i.w >= 4 ? `블랙컴뱃 ${i.w}승` : '';
+    i.famous = !!i.tag;
+    i.score = (i.champ ? 1000 : 0) + i.tw * 60 + i.tf * 25 + i.w * 6 - i.l * 2;
+    i.rec = p.w != null ? `${p.w}-${p.l}-${p.d}` : '';
+  });
 }
 
 /* ───────── 전적이 비어 있는 선수: ESPN 기록 API로 채우기 */
@@ -466,11 +493,27 @@ function detectNewResults(evs){
 }
 
 /* ───────── 표시 헬퍼 */
-const disp = n => famous(n)?.ko || n;
+const KO_SUR = { Kim:'김',Lee:'이',Yi:'이',Rhee:'이',Park:'박',Pak:'박',Choi:'최',Choe:'최',Jung:'정',Jeong:'정',Chung:'정',Kang:'강',Cho:'조',Jo:'조',Yoon:'윤',Yun:'윤',Jang:'장',Chang:'장',Lim:'임',Im:'임',Han:'한',Oh:'오',Seo:'서',Suh:'서',Shin:'신',Sin:'신',Kwon:'권',Gwon:'권',Hwang:'황',Ahn:'안',An:'안',Song:'송',Yoo:'유',Yu:'유',Ryu:'류',Hong:'홍',Jeon:'전',Jun:'전',Ko:'고',Go:'고',Moon:'문',Mun:'문',Yang:'양',Son:'손',Bae:'배',Baek:'백',Paik:'백',Heo:'허',Huh:'허',Nam:'남',Noh:'노',Roh:'노',Ha:'하',Kwak:'곽',Seong:'성',Sung:'성',Cha:'차',Joo:'주',Ju:'주',Woo:'우',Ku:'구',Koo:'구',Gu:'구',Min:'민',Na:'나',Ra:'라',Jin:'진',Ji:'지',Eom:'엄',Um:'엄',Chae:'채',Won:'원',Cheon:'천',Bang:'방',Gong:'공',Hyun:'현',Ham:'함',Byun:'변',Yeom:'염',Yeo:'여',Chu:'추',Do:'도',So:'소',Seok:'석',Sun:'선',Seol:'설',Ma:'마',Gil:'길',Wi:'위',Pyo:'표',Myung:'명',Ki:'기',Ban:'반',Wang:'왕',Ok:'옥',In:'인',Maeng:'맹',Je:'제',Mo:'모',Tak:'탁',Yong:'용',Ye:'예',Kook:'국',Kuk:'국' };
+const KO_SYL = { A:'아',Ah:'아',Ae:'애',Bi:'비',Bin:'빈',Bit:'빛',Bo:'보',Bok:'복',Bong:'봉',Bum:'범',Beom:'범',Byeol:'별',Byeong:'병',Byung:'병',Cha:'차',Chae:'채',Chan:'찬',Chang:'창',Cheol:'철',Chul:'철',Cheon:'천',Chi:'치',Chun:'춘',Choong:'충',Chung:'충',Da:'다',Dae:'대',Dam:'담',Deok:'덕',Duk:'덕',Do:'도',Dong:'동',Doo:'두',Du:'두',Eo:'어',Eui:'의',Ui:'의',Eun:'은',Ga:'가',Gang:'강',Geon:'건',Gun:'건',Geun:'근',Keun:'근',Gi:'기',Ki:'기',Gil:'길',Goo:'구',Gu:'구',Guk:'국',Kook:'국',Gook:'국',Kuk:'국',Gwang:'광',Kwang:'광',Gyeom:'겸',Gyeong:'경',Kyeong:'경',Kyung:'경',Gyo:'교',Kyo:'교',Gyu:'규',Kyu:'규',Gyun:'균',Kyun:'균',Ha:'하',Hae:'해',Haeng:'행',Hak:'학',Han:'한',Hee:'희',Hui:'희',Heon:'헌',Heum:'흠',Ho:'호',Hong:'홍',Hoon:'훈',Hun:'훈',Hwa:'화',Hwan:'환',Hwi:'휘',Hyang:'향',Hye:'혜',Hyeok:'혁',Hyuk:'혁',Hyeon:'현',Hyun:'현',Hyeong:'형',Hyung:'형',Hyo:'효',Il:'일',In:'인',Jae:'재',Je:'제',Ji:'지',Jin:'진',Jo:'조',Jong:'종',Joo:'주',Ju:'주',Jun:'준',Joon:'준',Jung:'정',Jeong:'정',Kang:'강',Kwon:'권',Mi:'미',Min:'민',Mo:'모',Moon:'문',Mun:'문',Myung:'명',Myeong:'명',Na:'나',Nam:'남',Ok:'옥',Pil:'필',Ra:'라',Rae:'래',Ran:'란',Ri:'리',Rim:'림',Rin:'린',Ryeong:'령',Ryong:'룡',San:'산',Sang:'상',Se:'세',Seo:'서',Seok:'석',Suk:'석',Seol:'설',Seon:'선',Sun:'선',Seong:'성',Sung:'성',Seop:'섭',Sub:'섭',Seung:'승',Shin:'신',Si:'시',Sik:'식',Sol:'솔',Song:'송',Soo:'수',Su:'수',Soon:'순',Tae:'태',Taek:'택',Tak:'탁',Wan:'완',Wi:'위',Won:'원',Woo:'우',Wook:'욱',Uk:'욱',Woon:'운',Woong:'웅',Ung:'웅',Ye:'예',Yeo:'여',Yeol:'열',Yeon:'연',Yeop:'엽',Yup:'엽',Yerin:'예린',Yong:'용',Yoo:'유',Yu:'유',Yoon:'윤',Yun:'윤',Young:'영',Yeong:'영',Yul:'율' };
+const KO_CACHE = new Map();
+function korName(n){
+  if (!n) return '';
+  if (KO_CACHE.has(n)) return KO_CACHE.get(n);
+  let r = (window.BC_KO||{})[n] || '';
+  if (!r) {
+    const t = n.replace(/-/g, ' ').split(/\s+/).map(x => x.charAt(0).toUpperCase() + x.slice(1).toLowerCase());
+    const nat = BC.fighters[BC.byName.get(keyOf(n))]?.nat;
+    const sur = KO_SUR[t[t.length-1]], given = t.slice(0, -1).map(x => KO_SYL[x]);
+    if (t.length >= 2 && t.length <= 4 && sur && given.every(Boolean) && (!nat || nat === 'South Korea')) r = sur + given.join('');
+  }
+  KO_CACHE.set(n, r); return r;
+}
+const disp = n => famous(n)?.ko || korName(n) || n;
 function nameHTML(n, { tag=false, en=false } = {}){
   const f = famous(n);
   const belt = isChamp(n) ? '<span class="belt" title="현 챔피언" aria-label="현 챔피언">C</span>' : '';
-  if (!f) return `<span class="fname">${esc(n)}</span>${belt}`;
+  if (!f) { const ko = korName(n), b = bcInfo(n);
+    return `<span class="fname">${esc(ko || n)}</span>${b?.famous ? '<span class="mark" aria-hidden="true"></span>' : ''}${belt}${tag && b?.tag ? `<span class="tag">${esc(b.tag)}</span>` : ''}${en && ko ? `<span class="s" style="display:block">${esc(n)}${b?.nick ? ` "${esc(b.nick)}"` : ''}</span>` : ''}`; }
   return `<span class="fname">${esc(f.ko)}</span><span class="mark" title="${esc(f.tag)}" aria-hidden="true"></span>${belt}${tag?`<span class="tag">${esc(f.tag)}</span>`:''}${en?`<span class="s" style="display:block">${esc(n)}${f.nick?` "${esc(f.nick)}"`:''}</span>`:''}`;
 }
 const shot = id => id ? `https://a.espncdn.com/i/headshots/mma/players/full/${id}.png` : '';
@@ -791,9 +834,34 @@ function fighterRow(n, extra){
   return `<div class="row" style="padding-right:6px"><button class="row" data-f="${esc(n)}" style="padding:0;flex:1;min-width:0">${avatar(n)}<span class="main"><span class="t">${nameHTML(n,{tag:!!f})}</span><span class="s">${sub}${(r => r ? ` · ${r}` : '')(recOf(n, p?.rec, p?.id))}</span></span></button>
     <button class="fav" data-fav="${esc(n)}" aria-pressed="${fav}" aria-label="${esc(disp(n))} 즐겨찾기">${fav?star:starO}</button></div>`;
 }
+const BC_OPEN = new Set();
+function bcRow(i){
+  const fav = state.favs.has(keyOf(i.name)), ko = korName(i.name);
+  return `<div class="row" style="padding-right:6px"><button class="row" data-f="${esc(i.name)}" style="padding:0;flex:1;min-width:0">${avatar(i.name)}<span class="main"><span class="t">${nameHTML(i.name, { tag:true })}</span>
+    <span class="s" style="white-space:normal"><b style="color:var(--ink);font-family:var(--f-display);font-size:14.5px">${esc(i.rec || `${i.w}-${i.l}-${i.d}`)}</b> · 블랙컴뱃 ${i.w}승 ${i.l}패${i.tw ? ` · 타이틀전 ${i.tw}승` : ''}<br>${ko ? esc(i.name) : ''}${i.nick ? `${ko ? ' · ' : ''}"${esc(i.nick)}"` : ''}</span></span></button>
+    <button class="fav" data-fav="${esc(i.name)}" aria-pressed="${fav}" aria-label="${esc(disp(i.name))} 즐겨찾기">${fav?star:starO}</button></div>`;
+}
+function renderBCFighters(match){
+  if (!BC.at) { $('#fightersWrap').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>'; loadBC().then(() => state.fK === 'bc' && renderFighters()).catch(() => { $('#fightersWrap').innerHTML = '<div class="empty"><b>블랙컴뱃 선수 기록을 불러오지 못했어요</b>잠시 뒤 다시 시도해 주세요.</div>'; }); return; }
+  const all = [...BCI.values()].filter(i => match(i.name, null, [korName(i.name), i.nick, i.tag, wc(i.wc)].join(' ')));
+  const by = new Map(); all.forEach(i => (by.get(i.wc) || by.set(i.wc, []).get(i.wc)).push(i));
+  const order = [...BC_ORDER, ...[...by.keys()].filter(w => !BC_ORDER.includes(w)).sort()];
+  const q = state.q.trim();
+  let html = `<p class="sub" style="margin-top:0">블랙컴뱃에 나온 선수 ${BCI.size}명. 빨간 사선은 챔피언·타이틀전 경험자·블랙컴뱃 4승 이상 선수예요.</p>`;
+  order.filter(w => by.has(w)).forEach(w => {
+    const list = by.get(w).sort((a,b) => b.score - a.score || b.last.localeCompare(a.last));
+    const top = list.filter(i => i.famous), rest = list.filter(i => !i.famous), open = q || BC_OPEN.has(w) || !top.length;
+    html += `<div class="section-h"><h2>${esc(wc(w))}</h2><span>${list.length}명${top.length ? ` · 주요 선수 ${top.length}명` : ''}</span></div>
+      <div class="group">${(open ? list : top).map(bcRow).join('')}${!open && rest.length ? `<button class="row" data-bcopen="${esc(w)}" style="justify-content:center;font-weight:700;font-size:13.5px">선수 ${rest.length}명 더 보기</button>` : ''}</div>`;
+  });
+  if (!all.length) html = `<div class="empty"><b>"${esc(state.q)}"에 맞는 블랙컴뱃 선수가 없어요</b>한글·영문 이름이나 링네임으로 찾을 수 있어요.</div>`;
+  $('#fightersWrap').innerHTML = html + `<p class="foot">선수 정보와 전적은 Sherdog 기록이에요. 한글 이름은 영문 표기를 바꾼 것이라 실제 이름과 한두 글자 다를 수 있어요. 링네임은 Sherdog에 등록된 표기 그대로예요.</p>`;
+  applyWiki();
+}
 function renderFighters(){
   const q = keyOf(state.q).replace(/ /g,''), qRaw = state.q.trim().toLowerCase(), k = state.fK;
-  const match = (n, f) => !qRaw || keyOf(n).replace(/ /g,'').includes(q) || (f && [f.ko,f.nick,f.tag,f.div,f.org].join(' ').toLowerCase().includes(qRaw));
+  if (k === 'bc') return renderBCFighters((n, f, extra) => !qRaw || keyOf(n).replace(/ /g,'').includes(q) || String(extra||'').toLowerCase().includes(qRaw));
+  const match = (n, f) => !qRaw || keyOf(n).replace(/ /g,'').includes(q) || (f && [f.ko,f.nick,f.tag,f.div,f.org].join(' ').toLowerCase().includes(qRaw)) || (korName(n)||'').includes(state.q.trim()) || (bcInfo(n)?.nick||'').toLowerCase().includes(qRaw);
   const sportOk = f => k==='all' || k==='fav' || (f ? f.sport===k : k==='mma');
   let html = '';
   const favs = [...state.favs].map(x => FIGHTERS.find(f=>keyOf(f.name)===x)?.name || PEOPLE.get(x)?.name).filter(Boolean).filter(n=>match(n,famous(n)));
@@ -802,11 +870,15 @@ function renderFighters(){
   if (k !== 'fav') {
     const stars = FIGHTERS.filter(f => sportOk(f) && match(f.name, f));
     if (stars.length) html += `<div class="section-h"><h2>레전드 & 스타</h2><span>${stars.length}명</span></div><div class="group">${stars.map(f=>fighterRow(f.name)).join('')}</div>`;
+    if (k !== 'boxing' && BC.at) {
+      const bcTop = [...BCI.values()].filter(i => i.famous && (i.champ || i.tw) && match(i.name)).sort((a,b) => b.score - a.score);
+      if (bcTop.length) html += `<div class="section-h"><h2>블랙컴뱃 챔피언 출신</h2><button class="s" data-fk="bc" style="font-size:13px">블랙컴뱃 전체 선수</button></div><div class="group">${bcTop.map(bcRow).join('')}</div>`;
+    }
     if (k !== 'boxing') {
       const ups = upcomingPeople().filter(s => !famous(s.name) && match(s.name)).sort((a,b)=>new Date(a.ev.date)-new Date(b.ev.date));
       if (ups.length) html += `<div class="section-h"><h2>출전 예정 선수</h2><span>${ups.length}명</span></div><div class="group">${ups.map(s=>fighterRow(s.name, `${kst(s.ev.date,{month:'numeric',day:'numeric'})} ${esc(LEAGUES[s.ev.lg]?.label||'')} · ${esc(wc(s.f.wc))}`)).join('')}</div>`;
       if (qRaw) {
-        const shown = new Set([...stars.map(f=>keyOf(f.name)), ...ups.map(s=>keyOf(s.name))]);
+        const shown = new Set([...stars.map(f=>keyOf(f.name)), ...ups.map(s=>keyOf(s.name)), ...[...BCI.values()].filter(i => i.champ || i.tw).map(i => keyOf(i.name))]);
         const others = [...PEOPLE.values()].filter(p => !shown.has(keyOf(p.name)) && match(p.name)).slice(0,40);
         if (others.length) html += `<div class="section-h"><h2>기록 속 선수</h2><span>${others.length}명</span></div><div class="group">${others.map(p=>fighterRow(p.name)).join('')}</div>`;
       }
@@ -887,11 +959,12 @@ function openFighter(n){
   const pastRow = x => { const me = keyOf(x.f.a.name)===k ? x.f.a : x.f.b, op = me===x.f.a ? x.f.b : x.f.a;
     const r = me.w ? '<b class="win">승</b>' : (x.f.a.w||x.f.b.w) ? '<b style="color:var(--red)">패</b>' : '<b style="color:var(--muted)">무</b>';
     return `<button class="row" data-ev="${x.e.lg}:${x.e.id}"><span class="datebox" style="width:30px">${r}</span><span class="main"><span class="t">vs ${nameHTML(op.name)}</span><span class="s">${titleOf(x.f,x.e)?`<span class="tt">${esc(titleOf(x.f,x.e).k)}</span> · `:''}${x.f.method?esc(x.f.method)+' · ':''}${kst(x.e.date,{year:'numeric',month:'short',day:'numeric'})} · ${esc(x.e.name)}</span></span>${chev}</button>`; };
-  const html = `<div class="pf">${avatar(n, p?.id)}<div style="min-width:0"><h3>${esc(f?.ko||n)}${f?'<span class="mark" aria-hidden="true"></span>':''}${isChamp(n)?'<span class="belt" title="현 챔피언">C</span>':''}</h3>
-      <div class="nick">${esc(n)}${f?.nick?` · "${esc(f.nick)}"`:''}</div>
+  const html = `<div class="pf">${avatar(n, p?.id)}<div style="min-width:0"><h3>${esc(disp(n))}${f||bcInfo(n)?.famous?'<span class="mark" aria-hidden="true"></span>':''}${isChamp(n)?'<span class="belt" title="현 챔피언">C</span>':''}</h3>
+      <div class="nick">${esc(n)}${(f?.nick||pre?.nick)?` · "${esc(f?.nick||pre?.nick)}"`:''}</div>
       <div style="margin-top:6px">${f?`<span class="tag" style="margin:0">${esc(f.tag)}</span>`:''} ${p?.flag?`<img src="${esc(p.flag)}" alt="${esc(p.country)}" style="display:inline;width:18px;height:12px;border-radius:2px;vertical-align:-1px;margin-left:4px">`:''} <span class="s" style="font-size:13px;color:var(--muted)">${esc(f?`${f.org} ${f.div}`:(p?.country||''))}</span></div></div></div>
     <div class="pf-actions"><button class="chip" data-fav="${esc(n)}" aria-pressed="${fav}">${fav?'즐겨찾기됨':'+ 즐겨찾기'}</button></div>
     <div class="stats"><div class="stat"><b id="pfRec">${esc(rec||'—')}</b><small>통산 전적</small></div><div class="stat"><b>${past.length?`${wl.w}-${wl.l}`:'—'}</b><small>앱 기록 승-패</small></div><div class="stat"><b>${titleFights || legends.length}</b><small>${titleFights ? '타이틀전(앱 기록)' : '레전드 매치'}</small></div></div>
+    ${(b => b ? `<div class="note">블랙컴뱃 ${esc(wc(b.wc))}${b.tag ? ` · ${esc(b.tag)}` : ''}<br>블랙컴뱃 전적 ${b.w}승 ${b.l}패${b.d ? ` ${b.d}무` : ''}${b.tf ? ` · 타이틀전 ${b.tw}승 ${b.tf - b.tw}패` : ''} · 통산 ${esc(b.rec || '—')}</div>` : '')(bcInfo(n))}
     ${(CHAMP.get(k)||[]).length?`<div class="note champ-note">현 챔피언 · ${(CHAMP.get(k)||[]).map(c=>`${esc(c.org)} ${esc(wc(c.div))}`).join(', ')}</div>`:''}
     ${f?`<div class="note">${esc(f.note)}</div>`:''}
     ${next?`<div class="card-sec">다음 경기</div><div class="group"><button class="row" data-ev="${next.e.lg}:${next.e.id}">${orgBadge(next.e.lg)}<span class="main"><span class="t">vs ${nameHTML(keyOf(next.f.a.name)===k?next.f.b.name:next.f.a.name)}</span><span class="s">${kst(next.e.date,{month:'long',day:'numeric',weekday:'short'})} · ${esc(next.e.name)}</span></span>${chev}</button></div>`:''}
@@ -900,7 +973,7 @@ function openFighter(n){
     ${past.length && !(pre?.hist||[]).length ?`<div id="pfPast"><div class="card-sec">최근 경기</div><div class="group">${past.slice(0,10).map(pastRow).join('')}</div></div>`:''}
     ${boxing.length?`<div class="card-sec">복싱 기록</div><div class="group">${boxing.map(boxRow).join('')}</div>`:''}
 `;
-  openSheet(f?.ko||n, html, $('#sheet').classList.contains('on'));
+  openSheet(disp(n), html, $('#sheet').classList.contains('on'));
   if (pre) return;
   const job = id ? espnDetail(id).catch(() => wikiDetail(n, f?.sport==='boxing')) : wikiDetail(n, f?.sport==='boxing');
   job.catch(() => null).then(D => {
@@ -964,9 +1037,11 @@ function toggleFav(n){
   document.querySelectorAll(`#sheet [data-fav]`).forEach(b => { if (keyOf(b.dataset.fav)===k) { const on = state.favs.has(k); b.setAttribute('aria-pressed', on); b.textContent = on?'즐겨찾기됨':'+ 즐겨찾기'; const top = sheetStack[sheetStack.length-1]; if (top) top.html = $('#sheetBody').innerHTML; } });
 }
 document.addEventListener('click', ev => {
-  const t = ev.target.closest('[data-scroll],#chSeg button,[data-v],[data-ev],[data-f],[data-legend],[data-box],[data-fav],[data-year],[data-rorg],[data-sorg],[data-goto],[data-retry],[data-back],#legendSeg button,#fSeg button');
+  const t = ev.target.closest('[data-bcopen],[data-fk],[data-scroll],#chSeg button,[data-v],[data-ev],[data-f],[data-legend],[data-box],[data-fav],[data-year],[data-rorg],[data-sorg],[data-goto],[data-retry],[data-back],#legendSeg button,#fSeg button');
   if (!t) return;
   const d = t.dataset;
+  if (d.bcopen) { BC_OPEN.add(d.bcopen); return renderFighters(); }
+  if (d.fk) { state.fK = d.fk; document.querySelectorAll('#fSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === d.fk)); window.scrollTo({ top:0 }); return renderFighters(); }
   if (d.scroll) { const sc = t.parentElement.querySelector('.pop'); return sc.scrollBy({ left: (+d.scroll) * Math.max(240, sc.clientWidth * .85), behavior:'smooth' }); }
   if (d.fav !== undefined) return toggleFav(d.fav);
   if (d.v) return go(d.v);

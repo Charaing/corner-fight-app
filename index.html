@@ -8,7 +8,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>코너 격투기</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23111'/%3E%3Cpath d='M38 14h10L30 50H20z' fill='%23D20A0A'/%3E%3C/svg%3E">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="코너">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -73,7 +77,7 @@ h1.large::after{content:"";position:absolute;left:0;bottom:0;width:34px;height:3
 .chips.years .chip{font-family:var(--f-display);font-size:18px;font-weight:700;padding:0 12px;height:40px;border:0;background:none;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
 .chips.years .chip[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--red);background:none}
 .seg{display:flex;margin:0 16px 16px;gap:6px}
-.seg button{flex:1;height:40px;font-size:14px;font-weight:700;color:var(--ink);border:1.5px solid var(--ink);background:var(--surface);letter-spacing:.01em}
+.seg button{flex:1;min-width:0;height:40px;font-size:14px;padding:0 4px;white-space:nowrap;font-weight:700;color:var(--ink);border:1.5px solid var(--ink);background:var(--surface);letter-spacing:.01em}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
 
 /* ── 섹션/리스트 */
@@ -432,9 +436,9 @@ button.row:hover{background:var(--surface-2)}
 
     <section class="view" id="v-fighters" aria-labelledby="h-fighters">
       <h1 class="large" id="h-fighters">선수</h1>
-      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="이름, 별명, 체급으로 찾기" aria-label="선수 검색" autocomplete="off"></div>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="한글·영문 이름, 링네임, 체급으로 찾기" aria-label="선수 검색" autocomplete="off"></div>
       <div class="seg" id="fSeg" role="group" aria-label="분류">
-        <button aria-pressed="true" data-k="all">전체</button><button aria-pressed="false" data-k="mma">MMA</button><button aria-pressed="false" data-k="boxing">복싱</button><button aria-pressed="false" data-k="fav">즐겨찾기</button>
+        <button aria-pressed="true" data-k="all">전체</button><button aria-pressed="false" data-k="mma">MMA</button><button aria-pressed="false" data-k="bc">블랙컴뱃</button><button aria-pressed="false" data-k="boxing">복싱</button><button aria-pressed="false" data-k="fav">즐겨찾기</button>
       </div>
       <div id="fightersWrap"></div>
     </section>
