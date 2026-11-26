@@ -125,6 +125,7 @@ function indexChamps(){
   const add = (n, info, wiki) => { const k = keyOf(n); (CHAMP.get(k) || CHAMP.set(k, []).get(k)).push(info); WIKI_OK.add(k); if (wiki) WIKI_TITLE[n] = wiki; };
   if (CH.ufc) [...CH.ufc.men, ...CH.ufc.women].forEach(c => add(c.name, { org:'UFC', div:c.div }, c.wiki));
   (CH.boxing||[]).forEach(d => Object.entries(d.belts).forEach(([b, c]) => c && add(c.name, { org:b, div:boxDiv(d.div).name }, c.wiki)));
+  if (BC.evs.length) bcChamps().forEach(c => c.name && add(c.name, { org:'블랙컴뱃', div:c.div }));
   (CH.titles||[]).forEach(t => { if (t.d) (TITLE_IDX.get(t.d) || TITLE_IDX.set(t.d, []).get(t.d)).push(t); });
 }
 async function loadChampions(force){
@@ -156,7 +157,7 @@ function titleOf(f, e){
   }
   f._t = r; f._tv = CH.at; return r;
 }
-const titleBadge = t => t ? `<span class="mthd title">🏆 ${esc(t.k)}</span>` : '';
+const titleBadge = t => t ? `<span class="mthd title">${esc(t.k)}</span>` : '';
 const isChamp = n => CHAMP.has(keyOf(n));
 function popScore(f, e){
   let s = (famous(f.a.name)?2:0) + (famous(f.b.name)?2:0);
@@ -253,7 +254,7 @@ async function loadBC(force){
     })));
     BC.evs = (j.events||[]).map(normBC).filter(e => e.fights.length).map(put);
     BC.evs.forEach(e => e.fights.forEach(f => [f.a, f.b].forEach(x => x.name !== '미정' && indexPerson(x, e.date))));
-    BC.at = Date.now(); return BC.evs;
+    BC.at = Date.now(); indexChamps(); return BC.evs;
   })();
   try { return await BC.p; } finally { BC.p = null; }
 }
@@ -391,7 +392,7 @@ function detailHTML(D, me){
   const res = x => x.res === 'W' ? '<b class="win">승</b>' : x.res === 'L' ? '<b style="color:var(--red)">패</b>' : x.res === 'D' ? '<b style="color:var(--muted)">무</b>' : '<b style="color:var(--muted)">NC</b>';
   const when = d => /^\d{4}-\d\d-\d\d/.test(d||'') ? `${d.slice(0,4)}.${d.slice(5,7)}.${d.slice(8,10)}` : esc(d||'');
   const hrow = x => `<button class="row hrow" data-f="${esc(x.opp)}"><span class="datebox" style="width:30px">${res(x)}</span><span class="main"><span class="t">vs ${nameHTML(x.opp)}</span>
-      <span class="s">${x.title?'<span class="tt">🏆 타이틀전</span> · ':''}${x.method?esc(x.method)+' · ':''}${x.rd?`R${esc(x.rd)}${x.time?' '+esc(x.time):''} · `:''}${when(x.date)}${x.ev?' · '+esc(x.ev):''}</span></span>${chev}</button>`;
+      <span class="s">${x.title?'<span class="tt">타이틀전</span> · ':''}${x.method?esc(x.method)+' · ':''}${x.rd?`R${esc(x.rd)}${x.time?' '+esc(x.time):''} · `:''}${when(x.date)}${x.ev?' · '+esc(x.ev):''}</span></span>${chev}</button>`;
   const streak = (() => { const h = D.hist||[]; if (!h.length) return ''; const f = h[0].res; let n = 0; for (const x of h) { if (x.res === f) n++; else break; } return n >= 2 && (f==='W'||f==='L') ? `${n}연${f==='W'?'승':'패'}` : ''; })();
   return `${bio.length ? `<div class="card-sec">프로필</div><div class="bio">${bio.map(([k,v]) => `<div><small>${k}</small><b>${esc(v)}</b></div>`).join('')}</div>` : ''}
     ${(r.w || r.l) ? `<div class="card-sec">승패 내역</div><div class="brkwrap">${bar('승', r.w, r.ko, r.sub||0, decW, 'w')}${bar('패', r.l, r.lko, r.lsub||0, decL, 'l')}${other||streak?`<p class="brk-o">${[streak, other].filter(Boolean).join(' · ')}</p>`:''}</div>` : ''}
@@ -468,9 +469,9 @@ function detectNewResults(evs){
 const disp = n => famous(n)?.ko || n;
 function nameHTML(n, { tag=false, en=false } = {}){
   const f = famous(n);
-  const belt = isChamp(n) ? '<span class="belt" title="현 챔피언" aria-label="현 챔피언">🏆</span>' : '';
+  const belt = isChamp(n) ? '<span class="belt" title="현 챔피언" aria-label="현 챔피언">C</span>' : '';
   if (!f) return `<span class="fname">${esc(n)}</span>${belt}`;
-  return `<span class="fname">${esc(f.ko)}</span><span class="mark" aria-hidden="true">${f.mark}</span>${belt}${tag?`<span class="tag">${esc(f.tag)}</span>`:''}${en?`<span class="s" style="display:block">${esc(n)}${f.nick?` "${esc(f.nick)}"`:''}</span>`:''}`;
+  return `<span class="fname">${esc(f.ko)}</span><span class="mark" title="${esc(f.tag)}" aria-hidden="true"></span>${belt}${tag?`<span class="tag">${esc(f.tag)}</span>`:''}${en?`<span class="s" style="display:block">${esc(n)}${f.nick?` "${esc(f.nick)}"`:''}</span>`:''}`;
 }
 const shot = id => id ? `https://a.espncdn.com/i/headshots/mma/players/full/${id}.png` : '';
 function avatar(n, id){
@@ -505,7 +506,7 @@ function eventRow(e, { results=false } = {}){
   else sub = `${kst(d,{hour:'numeric',minute:'2-digit'})} KST · ${esc(e.city||e.venue||'장소 미정')}`;
   return `<button class="row" data-ev="${e.lg}:${e.id}">
     <span class="datebox"><b>${kst(d,{day:'numeric'}).replace('일','')}</b><small>${kst(d,{weekday:'short'})}</small></span>
-    <span class="main"><span class="t">${orgBadge(e.lg)} ${esc(e.name)}</span><span class="s">${tb?`<span class="tt">🏆 ${esc(tb.k)}</span> `:''}${leg?'<span style="color:var(--gold);font-weight:600">★ 레전드 매치 · </span>':''}${sub}</span></span>${chev}</button>`;
+    <span class="main"><span class="t">${orgBadge(e.lg)} ${esc(e.name)}</span><span class="s">${tb?`<span class="tt">${esc(tb.k)}</span> · `:''}${leg?'<span class="lgd">레전드 매치</span> · ':''}${sub}</span></span>${chev}</button>`;
 }
 /* 인기 매치 카드 */
 function popCard(e, f){
@@ -594,11 +595,11 @@ function poster(e, m = mainOf(e)){
   const sur = n => `<span class="sur" ${fs}>${esc(surOf(n))}</span>`;
   const face = (s, cls) => { const id = s.id || PEOPLE.get(keyOf(s.name))?.id, src = id ? shot(id) : bcImg(s.name);
     return `<div class="face ${cls}">${src?`<img src="${esc(src)}" referrerpolicy="no-referrer" class="${id?'':'sd'}" alt="" onerror="this.insertAdjacentHTML('afterend','<span class=ph aria-hidden=true>${esc((s.name||'?')[0])}</span>');this.remove()">`:`<span class="ph" aria-hidden="true">${esc((s.name||'?')[0])}</span>`}</div>`; };
-  const sm = s => { const f = famous(s.name), r = recOf(s.name, s.rec, s.id); return `<small>${f?`${esc(f.ko)} ${f.mark}<br>${esc(f.tag)}`:esc(s.country||'')}${r?`<br><b style="font-family:var(--f-display);font-size:15px">${r}</b>`:''}</small>`; };
+  const sm = s => { const f = famous(s.name), r = recOf(s.name, s.rec, s.id); return `<small>${f?`${esc(f.ko)}<br>${esc(f.tag)}`:esc(s.country||'')}${r?`<br><b style="font-family:var(--f-display);font-size:15px">${r}</b>`:''}</small>`; };
   const enter = !poster.shown; poster.shown = true;
   return `<button class="poster ${enter?'enter':''} ${live?'is-live':''}" data-ev="${e.lg}:${e.id}" aria-label="${esc(e.name)} 자세히 보기">
     <div class="halves"></div><div class="grain"></div>
-    <div class="top">${live?'<span class="live">LIVE</span>':orgBadge(e.lg)}<span class="slot">${slot}</span>${t?`<span class="slot gold">🏆 ${esc(t.k)}</span>`:''}<span class="when">${live?'지금 진행 중':kst(when,{month:'numeric',day:'numeric',weekday:'short'})}</span></div>
+    <div class="top">${live?'<span class="live">LIVE</span>':orgBadge(e.lg)}<span class="slot">${slot}</span>${t?`<span class="slot gold">${esc(t.k)}</span>`:''}<span class="when">${live?'지금 진행 중':kst(when,{month:'numeric',day:'numeric',weekday:'short'})}</span></div>
     <div class="faces">${face(m.a,'a')}${face(m.b,'b')}</div>
     <div class="vs" aria-hidden="true">VS</div>
     <div class="names"><div class="nm a">${sur(m.a.name)}${sm(m.a)}</div><div class="nm b">${sur(m.b.name)}${sm(m.b)}</div></div>
@@ -619,7 +620,7 @@ function boxRow(b){
   return `<button class="row" ${i!=null?`data-legend="${i}"`:`data-box="${BOXING_RESULTS.indexOf(b)}"`}>
     <span class="datebox"><b>${kst(dayISO(b.date),{day:'numeric'}).replace('일','')}</b><small>${b.date.slice(2,4)}.${b.date.slice(5,7)}</small></span>
     <span class="main"><span class="t">${orgBadge('boxing')} ${nameHTML(b.a)} <span style="color:var(--muted);font-weight:400">vs</span> ${nameHTML(b.b)}</span>
-    <span class="s">${b.draw?'무승부':esc(disp(b.a))+' 승'} · ${esc(b.method)} ${b.round}R · ${esc(b.title)}${i!=null?' · <span style="color:var(--gold)">★ 레전드</span>':''}</span></span>${chev}</button>`;
+    <span class="s">${b.draw?'무승부':esc(disp(b.a))+' 승'} · ${esc(b.method)} ${b.round}R · ${esc(b.title)}${i!=null?' · <span class="lgd">레전드</span>':''}</span></span>${chev}</button>`;
 }
 
 /* ───────── 결과 탭 */
@@ -653,17 +654,94 @@ async function renderResults(force){
   initStrips();
 }
 
+/* ───────── UFC 한국어 사이트: 뉴스 · 랭킹 (GitHub Actions가 6시간마다 data/ufc.json으로 저장) */
+const UFC = store.get('ufc') || { news:[], rankings:[], updated:'' };
+let ufcAt = 0, ufcP = null;
+async function loadUFC(force){
+  if (!force && ufcAt && Date.now() - ufcAt < 10*60e3) return UFC;
+  if (ufcP) return ufcP;
+  ufcP = getJSON(`data/ufc.json?v=${Math.floor(Date.now()/6e5)}`, 12000).then(j => {
+    Object.assign(UFC, { news:j.news||[], rankings:j.rankings||[], updated:j.updated||'' });
+    ufcAt = Date.now(); store.set('ufc', UFC); return UFC;
+  }).finally(() => { ufcP = null; });
+  return ufcP;
+}
+const rel = iso => { if (!iso) return ''; const d = (Date.now() - new Date(iso)) / 864e5; return d < 1 ? '오늘' : d < 2 ? '어제' : d < 7 ? `${Math.floor(d)}일 전` : kst(iso, { month:'long', day:'numeric' }); };
+function renderNews(){
+  const wrap = $('#newsWrap'), list = UFC.news || [];
+  if (!list.length) { wrap.innerHTML = ufcP || !ufcAt ? '<div class="skeleton" style="height:220px"></div><div class="skeleton"></div><div class="skeleton"></div>' : `<div class="empty"><b>뉴스를 불러오지 못했어요</b>잠시 뒤 다시 시도해 주세요.<br><button data-retry="news">다시 시도</button></div>`; return; }
+  const meta = n => `<span class="nk">${n.cat?`<span>${esc(n.cat)}</span>`:''}${n.date?`<time>${esc(rel(n.date))}</time>`:''}</span>`;
+  const img = (n, eager) => n.img ? `<img src="${esc(n.img)}" alt="" ${eager?'':'loading="lazy"'} referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+  const card = (n, eager) => `<a class="news-lead" href="${esc(n.url)}" target="_blank" rel="noopener"><div class="im">${img(n, eager)}</div><div class="tx">${meta(n)}<h3>${esc(n.title)}</h3></div></a>`;
+  const [lead, ...rest] = list, side = rest.slice(0, 6), more = rest.slice(6);
+  wrap.innerHTML = `<div class="news-top">${card(lead, true)}<div class="news-list">${side.map((n,i) => `<a class="nrow" href="${esc(n.url)}" target="_blank" rel="noopener"><span class="nn">${i+2}</span><div>${meta(n)}<h4>${esc(n.title)}</h4></div><div class="im">${img(n)}</div></a>`).join('')}</div></div>
+    ${more.length ? `<div class="news-grid">${more.map(n => card(n)).join('')}</div>` : ''}
+    <p class="foot">출처: UFC 한국어 공식 사이트(kr.ufc.com). 제목과 사진만 모아 보여 주고, 기사는 UFC 사이트에서 열려요. 6시간마다 새 기사를 확인해요${UFC.updated?` · 마지막 확인 ${ago(new Date(UFC.updated).getTime())}`:''}.</p>`;
+}
+
+/* 블랙컴뱃 챔피언: 체급별 가장 최근 타이틀전 승자 */
+const BC_ORDER = ['Flyweight','Bantamweight','Featherweight','Lightweight','Welterweight','Middleweight','Light Heavyweight','Heavyweight','Atomweight','Strawweight'];
+function bcChamps(){
+  const by = new Map();
+  BC.evs.forEach(e => e.fights.forEach(f => { if (f.ttl && f.done && BC_ORDER.includes(f.wc)) (by.get(f.wc) || by.set(f.wc, []).get(f.wc)).push({ e, f }); }));
+  return BC_ORDER.filter(w => by.has(w)).map(w => {
+    const list = by.get(w).sort((a,b) => b.e.date.localeCompare(a.e.date));
+    const top = list[0], win = top.f.a.w ? top.f.a : top.f.b.w ? top.f.b : null;
+    let since = top.e.date, def = 0;
+    if (win) for (const x of list.slice(1)) { const wn = x.f.a.w ? x.f.a : x.f.b.w ? x.f.b : null; if (wn && keyOf(wn.name) === keyOf(win.name)) { since = x.e.date; def++; } else break; }
+    return { div:w, name: win?.name || '', since, def, hist: list.slice(0, 4), women: w === 'Atomweight' || w === 'Strawweight' };
+  });
+}
+
 /* ───────── 챔피언 탭 */
 const fmtSince = d => d ? `${d.slice(0,4)}.${d.slice(5,7)}.${d.slice(8,10)}` : '';
+const DIVK = { "Men's Pound-for-Pound":'파운드 포 파운드', "Women's Pound-for-Pound":'여성 파운드 포 파운드' };
+function champHead({ div, name, img, sub, meta, vacant }){
+  const f = name && famous(name);
+  const pic = img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+    : (() => { const a = avatar(name || '?'); const src = /src="([^"]+)"/.exec(a)?.[1]; return src ? `<img class="round" src="${src}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="ini">${esc((disp(name)||'?')[0])}</span>`; })();
+  return `<${vacant?'div':'button'} class="chead ${vacant?'vacant':''}" ${vacant?'':`data-f="${esc(name)}"`}>
+    <div><div class="cdiv">${esc(div)}</div><div class="cn">${esc(vacant ? '공석' : name)}</div>${f?`<div class="ck">${esc(f.ko)}</div>`:''}<div class="cmeta">${esc(meta || 'Champion')}</div>${sub?`<div class="ck" style="color:var(--muted);font-weight:500;margin:-8px 0 14px">${sub}</div>`:''}</div>
+    <div class="cimg">${vacant ? '' : pic}</div></${vacant?'div':'button'}>`;
+}
+const rkRow = r => `<li><button data-f="${esc(r.name)}"><span class="no">${r.rank}</span><span class="nm">${esc(disp(r.name))}${isChamp(r.name)?'<span class="belt">C</span>':''}</span>${r.chg?`<span class="ch ${r.chg>0?'up':'dn'}">${Math.abs(r.chg)}</span>`:r.new?'<span class="ch" style="color:var(--red)">NEW</span>':'<span></span>'}</button></li>`;
 function renderChamps(){
   const k = state.chK, wrap = $('#champWrap');
   document.querySelectorAll('#chSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === k));
+  if (k === 'ufc' && (UFC.rankings||[]).length) {
+    const wk = n => CH.ufc && [...CH.ufc.men, ...CH.ufc.women].find(c => same(c.name, n));
+    const col = g => {
+      const p4p = g.p4p, c = g.champ, w = c && wk(c.name);
+      const sub = !p4p && w ? `${fmtSince(w.since)}부터${w.def && w.def!=='0' ? ` · ${esc(w.def)}차 방어` : ''}` : '';
+      const list = p4p ? g.list.slice(1, 11) : g.list.slice(0, 10);
+      return `<div class="ccol">${champHead({ div: DIVK[g.div] || g.div, name: c?.name || '', img: c?.img, meta: p4p ? 'No. 1 Pound-for-Pound' : 'Champion', sub, vacant: !c })}
+        <ol class="rk">${list.map(rkRow).join('')}</ol></div>`;
+    };
+    const men = UFC.rankings.filter(g => !/^Women|^여성/.test(g.div)), women = UFC.rankings.filter(g => /^Women|^여성/.test(g.div));
+    wrap.innerHTML = `<div class="cgroup">남자<small>${men.filter(g=>!g.p4p).length}체급</small></div><div class="cgrid">${men.map(col).join('')}</div>
+      <div class="cgroup">여자<small>${women.filter(g=>!g.p4p).length}체급</small></div><div class="cgrid">${women.map(col).join('')}</div>
+      <p class="foot">UFC 공식 랭킹(kr.ufc.com)을 6시간마다 받아와요${UFC.updated?` · 마지막 확인 ${ago(new Date(UFC.updated).getTime())}`:''}. 화살표는 지난 발표 대비 순위 변화예요. 이름 옆 C 표시는 앱 어디서든 현 챔피언을 뜻해요.</p>`;
+    return;
+  }
+  if (k === 'bc') {
+    if (!BC.at) { wrap.innerHTML = '<div class="skeleton" style="height:160px"></div><div class="skeleton"></div>'; loadBC().then(() => state.chK==='bc' && state.tab==='champs' && renderChamps()).catch(() => { wrap.innerHTML = `<div class="empty"><b>블랙컴뱃 기록을 불러오지 못했어요</b><button data-retry="champs">다시 시도</button></div>`; }); return; }
+    const list = bcChamps();
+    const col = c => `<div class="ccol">${champHead({ div: wc(c.div), name: c.name, img: bcImg(c.name), meta:'Champion', sub: `${fmtSince(c.since)}부터${c.def ? ` · ${c.def}차 방어` : ''}` })}
+      <ol class="rk">${c.hist.map(x => { const w = x.f.a.w ? x.f.a : x.f.b, l = w === x.f.a ? x.f.b : x.f.a;
+        return `<li><button data-ev="bc:${esc(x.e.id)}"><span class="no" style="font-size:12px;color:var(--muted);white-space:nowrap">${x.e.date.slice(2,4)}.${x.e.date.slice(5,7)}</span><span class="nm">${esc(w.name)} <span style="color:var(--muted)">def.</span> ${esc(l.name)}</span><span class="ch" style="color:var(--muted)">${esc(x.f.method)}</span></button></li>`; }).join('')}</ol></div>`;
+    const men = list.filter(c => !c.women), women = list.filter(c => c.women);
+    wrap.innerHTML = `<div class="cgroup">남자<small>${men.length}체급</small></div><div class="cgrid">${men.map(col).join('')}</div>
+      ${women.length ? `<div class="cgroup">여자<small>${women.length}체급</small></div><div class="cgrid">${women.map(col).join('')}</div>` : ''}
+      <p class="foot">블랙컴뱃 타이틀전 기록(Sherdog)에서 체급별 가장 최근 승자를 챔피언으로 보여 줘요. 아래 목록은 그 체급의 최근 타이틀전이에요. 반납·박탈된 벨트는 바로 반영되지 않을 수 있어요.</p>`;
+    applyWiki(); return;
+  }
   if (k === 'ufc') {
     if (!CH.ufc) { wrap.innerHTML = CH.loading ? '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>' : `<div class="empty"><b>챔피언 정보를 불러오지 못했어요</b>인터넷 연결을 확인한 뒤 다시 시도해 주세요.<br><button data-retry="champs">다시 시도</button></div>`; return; }
-    const row = c => `<button class="row champ" data-f="${esc(c.name)}">${avatar(c.name)}<span class="main"><span class="dv">${esc(wc(c.div))}</span><span class="t">${nameHTML(c.name,{tag:!!famous(c.name)})}</span><span class="s">${esc(c.name)} · ${fmtSince(c.since)}부터${c.def && c.def!=='0' ? ` · ${esc(c.def)}차 방어` : ' · 첫 방어전 대기'}</span></span>${chev}</button>`;
-    wrap.innerHTML = `<div class="section-h"><h2>남자</h2><span>${CH.ufc.men.length}체급</span></div><div class="group">${CH.ufc.men.map(row).join('')}</div>
-      <div class="section-h"><h2>여자</h2><span>${CH.ufc.women.length}체급</span></div><div class="group">${CH.ufc.women.map(row).join('')}</div>
-      <p class="foot">위키백과 UFC 챔피언 목록을 6시간마다 받아와요. 마지막 갱신 ${CH.at ? ago(CH.at) : '—'}. 🏆 표시는 앱 어디서든 현 챔피언을 뜻해요.</p>`;
+    const col = c => `<div class="ccol">${champHead({ div: wc(c.div), name: c.name, meta:'Champion', sub: `${fmtSince(c.since)}부터${c.def && c.def!=='0' ? ` · ${esc(c.def)}차 방어` : ''}` })}</div>`;
+    wrap.innerHTML = `<div class="cgroup">남자<small>${CH.ufc.men.length}체급</small></div><div class="cgrid">${CH.ufc.men.map(col).join('')}</div>
+      <div class="cgroup">여자<small>${CH.ufc.women.length}체급</small></div><div class="cgrid">${CH.ufc.women.map(col).join('')}</div>
+      <p class="foot">위키백과 UFC 챔피언 목록 기준이에요. 공식 랭킹을 받아오면 체급별 순위도 함께 보여 줘요.</p>`;
+    loadUFC().then(() => state.chK==='ufc' && state.tab==='champs' && UFC.rankings.length && renderChamps()).catch(() => {});
   } else {
     if (!CH.boxing) { wrap.innerHTML = CH.loading ? '<div class="skeleton"></div><div class="skeleton"></div>' : `<div class="empty"><b>챔피언 정보를 불러오지 못했어요</b><button data-retry="champs">다시 시도</button></div>`; return; }
     const ORG = ['WBA','WBC','IBF','WBO','The Ring'];
@@ -671,11 +749,13 @@ function renderChamps(){
       const four = ['WBA','WBC','IBF','WBO'].map(b => d.belts[b] && keyOf(d.belts[b].name));
       const undisputed = four.every(x => x && x === four[0]);
       const rows = ORG.filter(b => b in d.belts).map(b => { const c = d.belts[b];
-        return c ? `<button class="row" data-f="${esc(c.name)}"><span class="bo ${b==='The Ring'?'ring':''}">${b==='The Ring'?'RING':b}</span>${avatar(c.name)}<span class="main"><span class="t">${nameHTML(c.name,{tag:!!famous(c.name)})}</span><span class="s">${esc(c.rec)}${c.since?` · ${fmtSince(c.since)}부터`:''}</span></span>${chev}</button>`
-                 : `<div class="row"><span class="bo">${b==='The Ring'?'RING':b}</span><span class="main"><span class="s">공석</span></span></div>`; }).join('');
+        return c ? `<li><button data-f="${esc(c.name)}" style="grid-template-columns:54px 1fr auto"><span class="bo ${b==='The Ring'?'ring':''}">${b==='The Ring'?'RING':b}</span><span class="nm">${esc(disp(c.name))}</span><span class="ch" style="color:var(--muted)">${esc(c.rec||'')}</span></button></li>`
+                 : `<li><button disabled style="grid-template-columns:54px 1fr auto;cursor:default"><span class="bo">${b==='The Ring'?'RING':b}</span><span class="nm" style="color:var(--muted)">공석</span><span></span></button></li>`; }).join('');
       const bd = boxDiv(d.div);
-      return `<div class="divlabel">${esc(wc(bd.name))}<small>${esc(d.lbs || bd.lbs)}</small>${undisputed?'<span class="mthd title">👑 언디스퓨티드</span>':''}</div><div class="group">${rows}</div>`;
-    }).join('') + `<p class="foot">위키백과 현역 복싱 세계 챔피언 목록을 6시간마다 받아와요. 4대 기구(WBA·WBC·IBF·WBO)를 한 명이 모두 가지면 언디스퓨티드예요.</p>`;
+      const lead = undisputed ? d.belts.WBA : (d.belts['The Ring'] || ['WBC','WBA','IBF','WBO'].map(b => d.belts[b]).find(Boolean));
+      return `<div class="ccol">${lead ? champHead({ div:`${wc(bd.name)} · ${String(d.lbs || bd.lbs).split(' or ')[0]}`, name: lead.name, meta: undisputed ? 'Undisputed Champion' : d.belts['The Ring'] === lead ? 'The Ring Champion' : 'Champion' }) : champHead({ div: wc(bd.name), vacant:true })}<ol class="rk">${rows}</ol></div>`;
+    }).join('');
+    wrap.innerHTML = `<div class="cgroup">체급별 세계 챔피언<small>${CH.boxing.length}체급</small></div><div class="cgrid">${wrap.innerHTML}</div><p class="foot">위키백과 현역 복싱 세계 챔피언 목록을 6시간마다 받아와요. 4대 기구(WBA·WBC·IBF·WBO)를 한 명이 모두 가지면 언디스퓨티드예요.</p>`;
   }
   applyWiki();
 }
@@ -757,7 +837,7 @@ function fightHTML(f, isMain, e){
   const side = (s, c) => { const lost = f.done && (f.a.w||f.b.w) && !s.w;
     return `<button class="side ${c} ${lost?'lost':''}" data-f="${esc(s.name)}">${avatar(s.name, s.id)}<span class="who"><span class="nm">${nameHTML(s.name)}${s.w?'<span class="wflag">승</span>':''}</span>
       <span class="rec">${s.flag?`<img src="${esc(s.flag)}" alt="${esc(s.country)}" loading="lazy">`:''}${recOf(s.name, s.rec, s.id) || '—'}</span></span></button>`; };
-  return `<div class="fight">${f.legend?`<button class="legend-ribbon" data-legend="${f.legend.i}">★ 레전드 매치</button>`:''}
+  return `<div class="fight">${f.legend?`<button class="legend-ribbon" data-legend="${f.legend.i}">레전드 매치</button>`:''}
     <div class="meta">${isMain?'<span class="mthd" style="background:var(--ink);color:var(--bg)">메인 이벤트</span>':''}${titleBadge(titleOf(f, e))}<span class="wc">${esc(wc(f.wc))}</span><span>${f.rounds}라운드</span></div>
     <div class="vsrow">${side(f.a,'a')}<span class="vsmid">VS</span>${side(f.b,'b')}</div>
     ${resultLine(f)?`<div class="result">${resultLine(f)}</div>`:''}</div>`;
@@ -778,7 +858,7 @@ function openEvent(key){
 function legendHTML(l){
   const side = (n, c, w) => `<button class="side ${c} ${!l.draw&&!w?'lost':''}" data-f="${esc(n)}">${avatar(n)}<span class="who"><span class="nm">${nameHTML(n)}${w&&!l.draw?'<span class="wflag">승</span>':''}</span><span class="rec">${esc(famous(n)?.tag||'')}</span></span></button>`;
   return `<div class="hero"><span class="org ${l.sport==='boxing'?'boxing':'ufc'}">${l.sport==='boxing'?'복싱':'MMA'}</span>
-    <h3 style="color:var(--gold);font-family:var(--f-display);font-weight:800;font-size:38px;line-height:1">${esc(l.hook)}</h3>
+    <h3 style="font-weight:900;font-size:28px;line-height:1.2;letter-spacing:-.03em">${esc(l.hook)}</h3>
     <p>${esc(l.org)} · ${kst(dayISO(l.date),{year:'numeric',month:'long',day:'numeric'})}</p></div>
     <div class="group"><div class="fight"><div class="meta"><span class="wc">${esc(l.title)}</span></div>
     <div class="vsrow">${side(l.a,'a',true)}<span class="vsmid">VS</span>${side(l.b,'b',false)}</div>
@@ -806,16 +886,16 @@ function openFighter(n){
   const rec = pre?.sum || p?.rec || (f?.name==='Floyd Mayweather' ? '50-0-0' : f?.name==='Khabib Nurmagomedov' ? '29-0-0' : '');
   const pastRow = x => { const me = keyOf(x.f.a.name)===k ? x.f.a : x.f.b, op = me===x.f.a ? x.f.b : x.f.a;
     const r = me.w ? '<b class="win">승</b>' : (x.f.a.w||x.f.b.w) ? '<b style="color:var(--red)">패</b>' : '<b style="color:var(--muted)">무</b>';
-    return `<button class="row" data-ev="${x.e.lg}:${x.e.id}"><span class="datebox" style="width:30px">${r}</span><span class="main"><span class="t">vs ${nameHTML(op.name)}</span><span class="s">${titleOf(x.f,x.e)?'🏆 '+esc(titleOf(x.f,x.e).k)+' · ':''}${x.f.method?esc(x.f.method)+' · ':''}${kst(x.e.date,{year:'numeric',month:'short',day:'numeric'})} · ${esc(x.e.name)}</span></span>${chev}</button>`; };
-  const html = `<div class="pf">${avatar(n, p?.id)}<div style="min-width:0"><h3>${esc(f?.ko||n)} ${f?.mark||''}</h3>
+    return `<button class="row" data-ev="${x.e.lg}:${x.e.id}"><span class="datebox" style="width:30px">${r}</span><span class="main"><span class="t">vs ${nameHTML(op.name)}</span><span class="s">${titleOf(x.f,x.e)?`<span class="tt">${esc(titleOf(x.f,x.e).k)}</span> · `:''}${x.f.method?esc(x.f.method)+' · ':''}${kst(x.e.date,{year:'numeric',month:'short',day:'numeric'})} · ${esc(x.e.name)}</span></span>${chev}</button>`; };
+  const html = `<div class="pf">${avatar(n, p?.id)}<div style="min-width:0"><h3>${esc(f?.ko||n)}${f?'<span class="mark" aria-hidden="true"></span>':''}${isChamp(n)?'<span class="belt" title="현 챔피언">C</span>':''}</h3>
       <div class="nick">${esc(n)}${f?.nick?` · "${esc(f.nick)}"`:''}</div>
       <div style="margin-top:6px">${f?`<span class="tag" style="margin:0">${esc(f.tag)}</span>`:''} ${p?.flag?`<img src="${esc(p.flag)}" alt="${esc(p.country)}" style="display:inline;width:18px;height:12px;border-radius:2px;vertical-align:-1px;margin-left:4px">`:''} <span class="s" style="font-size:13px;color:var(--muted)">${esc(f?`${f.org} ${f.div}`:(p?.country||''))}</span></div></div></div>
-    <div style="display:flex;gap:8px;margin:0 16px 14px"><button class="chip" data-fav="${esc(n)}" aria-pressed="${fav}" style="height:38px">${fav?'★ 즐겨찾기됨':'☆ 즐겨찾기'}</button></div>
+    <div class="pf-actions"><button class="chip" data-fav="${esc(n)}" aria-pressed="${fav}">${fav?'즐겨찾기됨':'+ 즐겨찾기'}</button></div>
     <div class="stats"><div class="stat"><b id="pfRec">${esc(rec||'—')}</b><small>통산 전적</small></div><div class="stat"><b>${past.length?`${wl.w}-${wl.l}`:'—'}</b><small>앱 기록 승-패</small></div><div class="stat"><b>${titleFights || legends.length}</b><small>${titleFights ? '타이틀전(앱 기록)' : '레전드 매치'}</small></div></div>
-    ${(CHAMP.get(k)||[]).length?`<div class="note champ-note">🏆 현 챔피언 · ${(CHAMP.get(k)||[]).map(c=>`${c.org==='UFC'?'UFC':esc(c.org)} ${esc(wc(c.div))}`).join(', ')}</div>`:''}
+    ${(CHAMP.get(k)||[]).length?`<div class="note champ-note">현 챔피언 · ${(CHAMP.get(k)||[]).map(c=>`${esc(c.org)} ${esc(wc(c.div))}`).join(', ')}</div>`:''}
     ${f?`<div class="note">${esc(f.note)}</div>`:''}
     ${next?`<div class="card-sec">다음 경기</div><div class="group"><button class="row" data-ev="${next.e.lg}:${next.e.id}">${orgBadge(next.e.lg)}<span class="main"><span class="t">vs ${nameHTML(keyOf(next.f.a.name)===k?next.f.b.name:next.f.a.name)}</span><span class="s">${kst(next.e.date,{month:'long',day:'numeric',weekday:'short'})} · ${esc(next.e.name)}</span></span>${chev}</button></div>`:''}
-    ${legends.length?`<div class="card-sec">레전드 매치</div><div class="group">${legends.map(l=>`<button class="row" data-legend="${l.i}"><span class="main"><span class="t" style="color:var(--gold)">★ ${esc(l.hook)}</span><span class="s">${esc(disp(l.a))} ${l.draw?'vs':'def.'} ${esc(disp(l.b))} · ${l.date.slice(0,4)}</span></span>${chev}</button>`).join('')}</div>`:''}
+    ${legends.length?`<div class="card-sec">레전드 매치</div><div class="group">${legends.map(l=>`<button class="row" data-legend="${l.i}"><span class="main"><span class="t"><span class="lgd"></span>${esc(l.hook)}</span><span class="s">${esc(disp(l.a))} ${l.draw?'vs':'def.'} ${esc(disp(l.b))} · ${l.date.slice(0,4)}</span></span>${chev}</button>`).join('')}</div>`:''}
     <div id="pfDetail" data-k="${esc(k)}">${pre ? detailHTML(pre) : '<div class="card-sec">상세 기록</div><div class="skeleton" style="height:120px"></div>'}</div>
     ${past.length && !(pre?.hist||[]).length ?`<div id="pfPast"><div class="card-sec">최근 경기</div><div class="group">${past.slice(0,10).map(pastRow).join('')}</div></div>`:''}
     ${boxing.length?`<div class="card-sec">복싱 기록</div><div class="group">${boxing.map(boxRow).join('')}</div>`:''}
@@ -868,20 +948,20 @@ async function sync(manual){
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('on'), 2600); }
 
 /* ───────── 탭 & 이벤트 */
-const TITLES = { schedule:'일정', results:'결과', champs:'챔피언', legends:'레전드 매치', fighters:'선수' };
+const TITLES = { schedule:'일정', results:'결과', news:'뉴스', champs:'챔피언', legends:'레전드 매치', fighters:'선수' };
 function go(tab){
   state.tab = tab;
   document.querySelectorAll('.tabbar [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.v===tab));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id==='v-'+tab));
   $('#miniTitle').textContent = TITLES[tab]; window.scrollTo({ top:0 });
-  if (tab==='results') renderResults(); if (tab==='champs') renderChamps(); if (tab==='legends') renderLegends(); if (tab==='fighters') renderFighters();
+  if (tab==='results') renderResults(); if (tab==='news') { renderNews(); loadUFC().then(() => state.tab==='news' && renderNews()).catch(() => state.tab==='news' && renderNews()); } if (tab==='champs') renderChamps(); if (tab==='legends') renderLegends(); if (tab==='fighters') renderFighters();
   try { history.replaceState(null, '', '#'+tab); } catch {}
 }
 function toggleFav(n){
   const k = keyOf(n); state.favs.has(k) ? state.favs.delete(k) : state.favs.add(k);
   store.set('favs', [...state.favs]); toast(state.favs.has(k) ? `${disp(n)} 즐겨찾기에 추가했어요` : `${disp(n)} 즐겨찾기를 해제했어요`);
   if (state.tab==='fighters') renderFighters();
-  document.querySelectorAll(`#sheet [data-fav]`).forEach(b => { if (keyOf(b.dataset.fav)===k) { const on = state.favs.has(k); b.setAttribute('aria-pressed', on); b.textContent = on?'★ 즐겨찾기됨':'☆ 즐겨찾기'; const top = sheetStack[sheetStack.length-1]; if (top) top.html = $('#sheetBody').innerHTML; } });
+  document.querySelectorAll(`#sheet [data-fav]`).forEach(b => { if (keyOf(b.dataset.fav)===k) { const on = state.favs.has(k); b.setAttribute('aria-pressed', on); b.textContent = on?'즐겨찾기됨':'+ 즐겨찾기'; const top = sheetStack[sheetStack.length-1]; if (top) top.html = $('#sheetBody').innerHTML; } });
 }
 document.addEventListener('click', ev => {
   const t = ev.target.closest('[data-scroll],#chSeg button,[data-v],[data-ev],[data-f],[data-legend],[data-box],[data-fav],[data-year],[data-rorg],[data-sorg],[data-goto],[data-retry],[data-back],#legendSeg button,#fSeg button');
@@ -900,6 +980,7 @@ document.addEventListener('click', ev => {
   if (d.sorg) { state.schedOrg = d.sorg; return renderSchedule(); }
   if (d.goto) return go(d.goto);
   if (d.retry === 'champs') return refreshChamps(true);
+  if (d.retry === 'news') { ufcAt = 0; return go('news'); }
   if (d.retry) return renderResults(true);
   if (t.closest('#chSeg')) { state.chK = d.k; return renderChamps(); }
   if (t.closest('#legendSeg')) { state.legendK = d.k; document.querySelectorAll('#legendSeg button').forEach(b=>b.setAttribute('aria-pressed', b===t)); return renderLegends(); }
@@ -929,6 +1010,7 @@ const had = restoreUpcoming();
 if (had) renderSchedule();
 const start = (location.hash||'').slice(1);
 if (TITLES[start] && start !== 'schedule') go(start);
+loadUFC().then(() => { if (state.tab==='champs') renderChamps(); if (state.tab==='news') renderNews(); }).catch(() => {});
 refreshChamps(false);
 setInterval(() => refreshChamps(false), 30*60e3);
 sync().then(() => {
