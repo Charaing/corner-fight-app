@@ -89,7 +89,7 @@ button.row:active{background:var(--surface-2)}
 .datebox b{display:block;font-family:var(--f-display);font-size:26px;font-weight:700;letter-spacing:-.01em}
 .datebox small{font-size:11px;color:var(--muted)}
 .org{display:inline-flex;align-items:center;height:19px;padding:0 6px;border-radius:5px;font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.02em;color:#fff;background:#2A2E36;flex:none}
-.org.ufc{background:#D20A11}.org.pfl{background:#1C1C1C;box-shadow:inset 0 0 0 1px #C9A23A;color:#E6C25A}.org.bellator{background:#1B1B1B}.org.rizin{background:#E5007F}.org.boxing{background:#B8841A}.org.one{background:#111;color:#F4C430}
+.org.ufc{background:#D20A11}.org.pfl{background:#1C1C1C;box-shadow:inset 0 0 0 1px #C9A23A;color:#E6C25A}.org.bellator{background:#1B1B1B}.org.rizin{background:#E5007F}.org.bc{background:#0A0A0A;color:#fff;box-shadow:inset 0 0 0 1px #E10600}.org.boxing{background:#B8841A}.org.one{background:#111;color:#F4C430}
 .month{font-size:13px;font-weight:600;color:var(--muted);margin:18px 16px 6px}
 .empty{margin:28px 16px;padding:28px 18px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:var(--r-md);font-size:14px}
 .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
@@ -257,6 +257,28 @@ button.row:active{background:var(--surface-2)}
 .poster .slot.gold{background:rgba(255,206,84,.25);color:#FFE29A}
 .poster .when{margin-left:auto}
 .count div{min-width:38px}
+/* ── 선수 상세 기록 */
+.bio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 16px}
+.bio div{background:var(--surface-2);border-radius:12px;padding:9px 11px;min-width:0}
+.bio small{display:block;font-size:11.5px;color:var(--muted)}
+.bio b{display:block;font-size:14px;font-weight:600;margin-top:2px;line-height:1.35;overflow-wrap:anywhere}
+.brkwrap{margin:0 16px;background:var(--surface-2);border-radius:12px;padding:12px 14px 4px}
+.brk{margin-bottom:12px}
+.brk .bh{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
+.brk .bh b{font-family:var(--f-display);font-size:28px;font-weight:800;line-height:1}
+.brk .bh span{font-size:13px;color:var(--muted);font-weight:600}
+.brk.w .bh b{color:var(--ink)}.brk.l .bh b{color:var(--red)}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);gap:2px}
+.bar i{display:block;height:100%}
+.bl{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:7px;font-size:12.5px;color:var(--ink-2)}
+.bl i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+.bar .ko,.bl .ko{background:var(--red)}.bar .sub,.bl .sub{background:var(--blue)}.bar .dec,.bl .dec{background:var(--muted)}
+.brk-o{margin:0 0 10px;font-size:13px;color:var(--ink-2);font-weight:500}
+.stats.st4{grid-template-columns:repeat(3,minmax(0,1fr))}
+.stats.st4 .stat b{font-size:22px}
+.stat .of{font-size:15px;color:var(--muted);font-weight:600}
+.avatar img.sd,.poster .face img.sd{max-width:100%;border-radius:50% 50% 0 0;width:100%;height:100%;left:0;top:0;object-fit:cover;object-position:50% 15%}
+@media (max-width:360px){.bio{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @keyframes pulse{50%{opacity:.35}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes shimmer{to{background-position:-200% 0}}

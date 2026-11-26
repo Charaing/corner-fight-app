@@ -1,5 +1,6 @@
 /* 코너 — 격투기 일정·결과 앱
    실시간 데이터: ESPN 공개 스코어보드 피드 (UFC · PFL · Bellator · RIZIN)
+   블랙컴뱃: Sherdog 기록을 GitHub Actions가 6시간마다 data/blackcombat.json으로 저장
    큐레이션 데이터: data.js (레전드 매치, 유명 선수 특징, 복싱 기록) */
 (() => {
 'use strict';
@@ -9,14 +10,16 @@ const LEAGUES = {
   ufc:      { label:'UFC',      path:'mma/ufc',      from:2011 },
   pfl:      { label:'PFL',      path:'mma/pfl',      from:2018 },
   bellator: { label:'Bellator', path:'mma/bellator', from:2011, to:2025 },
-  rizin:    { label:'RIZIN',    path:'mma/rizin',    from:2015 }
+  rizin:    { label:'RIZIN',    path:'mma/rizin',    from:2015 },
+  bc:       { label:'블랙컴뱃',  local:'data/blackcombat.json', from:2021 }
 };
 const LIVE_LEAGUES = ['ufc','pfl','rizin'];
+const SCHED_ORGS = [...LIVE_LEAGUES, 'bc'];
 const NOW_Y = new Date().getFullYear();
 const FIRST_Y = NOW_Y - 15;
 const POLL_LIVE = 30e3, POLL_IDLE = 180e3;
 
-const WC = { 'Super welterweight':'슈퍼웰터급','Super lightweight':'슈퍼라이트급','W Strawweight':'여성 스트로급','W Flyweight':'여성 플라이급','W Bantamweight':'여성 밴텀급','W Featherweight':'여성 페더급','Bridgerweight':'브리저급','Cruiserweight':'크루저급','Super middleweight':'슈퍼미들급','Light middleweight':'라이트미들급','Light welterweight':'라이트웰터급','Super featherweight':'슈퍼페더급','Super bantamweight':'슈퍼밴텀급','Super flyweight':'슈퍼플라이급','Light flyweight':'라이트플라이급','Minimumweight':'미니멈급','Light heavyweight':'라이트헤비급', 'Heavyweight':'헤비급','Light Heavyweight':'라이트헤비급','Middleweight':'미들급','Welterweight':'웰터급','Lightweight':'라이트급','Featherweight':'페더급','Bantamweight':'밴텀급','Flyweight':'플라이급','Strawweight':'스트로급',"Women's Strawweight":'여성 스트로급',"Women's Flyweight":'여성 플라이급',"Women's Bantamweight":'여성 밴텀급',"Women's Featherweight":'여성 페더급','Catchweight':'계약 체중','Super Heavyweight':'슈퍼헤비급','Open Weight':'무차별급' };
+const WC = { 'Super welterweight':'슈퍼웰터급','Super lightweight':'슈퍼라이트급','W Strawweight':'여성 스트로급','W Flyweight':'여성 플라이급','W Bantamweight':'여성 밴텀급','W Featherweight':'여성 페더급','Bridgerweight':'브리저급','Cruiserweight':'크루저급','Super middleweight':'슈퍼미들급','Light middleweight':'라이트미들급','Light welterweight':'라이트웰터급','Super featherweight':'슈퍼페더급','Super bantamweight':'슈퍼밴텀급','Super flyweight':'슈퍼플라이급','Light flyweight':'라이트플라이급','Minimumweight':'미니멈급','Light heavyweight':'라이트헤비급', 'Heavyweight':'헤비급','Light Heavyweight':'라이트헤비급','Middleweight':'미들급','Welterweight':'웰터급','Lightweight':'라이트급','Featherweight':'페더급','Bantamweight':'밴텀급','Flyweight':'플라이급','Strawweight':'스트로급',"Women's Strawweight":'여성 스트로급',"Women's Flyweight":'여성 플라이급',"Women's Bantamweight":'여성 밴텀급',"Women's Featherweight":'여성 페더급','Catchweight':'계약 체중','Super Heavyweight':'슈퍼헤비급','Open Weight':'무차별급','Atomweight':'아톰급',"Women's Atomweight":'여성 아톰급','Pound for Pound':'무차별급' };
 const METHOD = { Kotko:'KO/TKO', Ko:'KO/TKO', Tko:'KO/TKO', Submission:'서브미션', Decision:'판정', Dq:'실격', Disqualification:'실격', Draw:'무승부' };
 
 /* ───────── 유틸 */
@@ -139,6 +142,7 @@ const toks = n => String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerC
 function same(x, y){ if (keyOf(x) === keyOf(y)) return true; const a = toks(x), b = toks(y); if (a[a.length-1] === b[b.length-1]) return true; return a.some(t => t.length > 3 && b.includes(t)); }
 const normDiv = s => String(s||'').toLowerCase().replace(/^w(omen'?s)?\s+/, 'w').replace(/\s+/g,'');
 function titleOf(f, e){
+  if (e.lg === 'bc') return f.ttl ? { k:'타이틀전' } : null;
   if (f._tv === CH.at && f._t !== undefined) return f._t;
   let r = null; const d = new Date(f.date || e.date);
   for (const off of [0,-1,1]) {
@@ -212,6 +216,196 @@ const EVENTS = new Map();
 const put = e => (EVENTS.set(e.lg+':'+e.id, e), e);
 const mainOf = e => e.fights[e.fights.length-1];
 
+/* ───────── 블랙컴뱃 */
+const BC = { evs:[], fighters:{}, byName:new Map(), img:new Map(), at:0, updated:'' };
+const RES_DONE = new Set(['win','loss','draw','nc','no_contest']);
+function bcMethod(m){
+  const s = String(m||''), base = s.split('(')[0].trim().toLowerCase(), det = (/\(([^)]+)\)/.exec(s)||[])[1] || '';
+  const k = /^t?ko/.test(base) ? 'KO/TKO' : /^sub/.test(base) ? '서브미션' : /^dec/.test(base) ? '판정' : /^draw/.test(base) ? '무승부' : /no contest|^nc/.test(base) ? 'NC' : /^dq|disq/.test(base) ? '실격' : s;
+  return { k, det };
+}
+const bcImg = n => BC.img.get(keyOf(n)) || '';
+function bcSide(s){
+  const p = BC.fighters[s.fid];
+  return { id:null, fid:s.fid, name:s.name || '미정', flag:'', country:p?.nat || '', rec: s.rec || (p ? `${p.w}-${p.l}-${p.d}` : ''), w: s.res === 'win', belt:false };
+}
+function normBC(ev){
+  const date = ev.date + 'T09:00:00Z';
+  const fights = (ev.fights||[]).slice().sort((x,y) => (x.main - y.main) || (x.no - y.no)).map((f,i) => {
+    const done = RES_DONE.has(f.a.res) || RES_DONE.has(f.b.res), m = bcMethod(f.method);
+    return { id:`bc:${ev.id}:${f.no||i}`, date, wc:f.wc, rounds: f.title ? 5 : 3, state: done ? 'post' : 'pre', done,
+      rd: done ? (+f.rd || 0) : 0, clk: done ? (f.time||'') : '', method: done ? m.k : '', det: done ? m.det : '', ttl: !!f.title, a: bcSide(f.a), b: bcSide(f.b), legend:null };
+  });
+  const st = fights.length && fights.every(f => f.done) ? 'post' : 'pre';
+  return { id:ev.id, lg:'bc', name:ev.name, date, state:st, venue:ev.venue||'', city:'', fights };
+}
+async function loadBC(force){
+  if (!force && BC.at && Date.now() - BC.at < 10*60e3) return BC.evs;
+  if (BC.p) return BC.p;
+  BC.p = (async () => {
+    const j = await getJSON(`${LEAGUES.bc.local}?v=${Math.floor(Date.now()/6e5)}`, 15000);
+    BC.fighters = j.fighters || {}; BC.updated = j.updated || '';
+    Object.entries(BC.fighters).forEach(([fid, p]) => { if (p.name) { BC.byName.set(keyOf(p.name), fid); if (p.img) BC.img.set(keyOf(p.name), p.img); } });
+    (j.events||[]).forEach(e => (e.fights||[]).forEach(f => [f.a, f.b].forEach(x => {
+      const k = keyOf(x.name); if (!x.fid) return;
+      if (!BC.byName.has(k)) BC.byName.set(k, x.fid);
+      if (x.img && !BC.img.has(k)) BC.img.set(k, x.img);
+    })));
+    BC.evs = (j.events||[]).map(normBC).filter(e => e.fights.length).map(put);
+    BC.evs.forEach(e => e.fights.forEach(f => [f.a, f.b].forEach(x => x.name !== '미정' && indexPerson(x, e.date))));
+    BC.at = Date.now(); return BC.evs;
+  })();
+  try { return await BC.p; } finally { BC.p = null; }
+}
+
+/* ───────── 전적이 비어 있는 선수: ESPN 기록 API로 채우기 */
+const RECS = store.get('recs') || {};
+let rq = new Set(), rqT = 0;
+const idOf = (n, id) => id || famous(n)?.id || PEOPLE.get(keyOf(n))?.id || null;
+function recOf(n, rec, id){
+  if (rec) return esc(rec);
+  id = idOf(n, id); if (!id) return '';
+  const c = RECS[id];
+  if (c && Date.now() - c[1] < 864e5) return esc(c[0]);
+  rq.add(id); clearTimeout(rqT); rqT = setTimeout(flushRecs, 150);
+  return `<span data-rec-id="${esc(id)}">${c ? esc(c[0]) : '…'}</span>`;
+}
+function fillRec(id, sum){
+  document.querySelectorAll(`[data-rec-id="${CSS.escape(String(id))}"]`).forEach(el => { el.textContent = sum || '—'; });
+  if (sum) PEOPLE.forEach(p => { if (p.id === id && !p.rec) p.rec = sum; });
+  const top = sheetStack[sheetStack.length-1]; if (top && $('#sheet').classList.contains('on')) top.html = $('#sheetBody').innerHTML;
+}
+async function flushRecs(){
+  const ids = [...rq]; rq.clear();
+  const one = async id => {
+    try {
+      const j = await getJSON(`https://sports.core.api.espn.com/v2/sports/mma/athletes/${id}/records`, 10000);
+      const sum = (j.items||[]).find(x => x.type === 'total')?.summary || j.items?.[0]?.summary || '';
+      RECS[id] = [sum, Date.now()]; fillRec(id, sum);
+    } catch { fillRec(id, RECS[id]?.[0] || ''); }
+  };
+  for (let i = 0; i < ids.length; i += 6) await Promise.all(ids.slice(i, i+6).map(one));
+  const ks = Object.keys(RECS); if (ks.length > 1500) ks.sort((a,b) => RECS[a][1] - RECS[b][1]).slice(0, ks.length-1500).forEach(k => delete RECS[k]);
+  store.set('recs', RECS);
+}
+
+/* ───────── 선수 상세 기록: ESPN → Sherdog(블랙컴뱃) → 위키백과 */
+const STANCE = { Orthodox:'오소독스', Southpaw:'사우스포', Switch:'스위치', 'Open Stance':'오픈 스탠스' };
+const DETAIL = new Map();
+function cacheDetail(key, d){
+  DETAIL.set(key, d); store.set('det:'+key, d);
+  const idx = (store.get('detIdx') || []).filter(k => k !== key); idx.push(key);
+  while (idx.length > 40) { try { localStorage.removeItem('corner:det:'+idx.shift()); } catch {} }
+  store.set('detIdx', idx); return d;
+}
+function cachedDetail(key, ttl){
+  const d = DETAIL.get(key) || store.get('det:'+key);
+  return d && Date.now() - d.at < ttl ? d : null;
+}
+async function espnDetail(id){
+  const key = 'e'+id, hit = cachedDetail(key, 12*36e5); if (hit) return hit;
+  const base = 'https://site.web.api.espn.com/apis/common/v3/sports/mma/athletes/'+id;
+  const [a, s, r] = await Promise.allSettled([getJSON(base, 15000), getJSON(base+'/stats', 15000), getJSON(`https://sports.core.api.espn.com/v2/sports/mma/athletes/${id}/records`, 10000)]);
+  if (a.status !== 'fulfilled') throw new Error('athlete');
+  const A = a.value.athlete || {}, map = a.value.eventsMap || {};
+  const rs = Object.fromEntries(((r.value?.items||[]).find(x=>x.type==='total') || r.value?.items?.[0] || {}).stats?.map(x => [x.name, x.value]) || []);
+  const sumTxt = (A.statsSummary?.statistics||[]).find(x => x.name==='wins-losses-draws')?.displayValue || '';
+  const [sw, sl, sd] = sumTxt.split('-').map(Number);
+  const w = rs.wins ?? sw ?? 0, l = rs.losses ?? sl ?? 0;
+  const rec = { w, l, d: rs.draws ?? sd ?? 0, nc: rs.noContests || 0, ko: rs.tkos || 0, sub: rs.submissions || 0, lko: rs.tkoLosses || 0, lsub: rs.submissionLosses || 0, tw: rs.titleWins || 0, tl: rs.titleLosses || 0 };
+  rec.dec = Math.max(0, w - rec.ko - rec.sub); rec.ldec = Math.max(0, l - rec.lko - rec.lsub);
+  const hist = (a.value.events||[]).map(u => map[u]).filter(x => x && x.gameResult).map(x => ({
+    res: x.gameResult, opp: x.opponent?.displayName || '', oppId: x.opponent?.id || '', date: x.gameDate, ev: x.name || '',
+    method: espnMethod(x.status?.result), rd: x.status?.period || '', time: x.status?.displayClock || '', title: !!x.titleFight }));
+  const st = { n:0, ssl:0, ssa:0, kd:0, tdl:0, tda:0, sm:0 };
+  (s.value?.categories||[]).forEach(c => {
+    const ix = Object.fromEntries((c.labels||[]).map((l,i) => [l.trim(), i]));
+    (c.statistics||[]).forEach((row, i) => {
+      const v = k => ix[k] == null ? 0 : (parseFloat(row.stats[ix[k]]) || 0);
+      if ('SSL' in ix) { st.n++; st.ssl += v('SSL'); st.ssa += v('SSA'); st.kd += v('KD'); }
+      if ('TDL' in ix) { st.tdl += v('TDL'); st.tda += v('TDA'); }
+      if ('SM' in ix) st.sm += v('SM');
+    });
+  });
+  const dob = A.displayDOB ? `${A.age ? A.age+'세 · ' : ''}${A.displayDOB}` : A.age ? A.age+'세' : '';
+  const bio = [['키', A.displayHeight], ['체중', A.displayWeight], ['리치', A.displayReach], ['나이', dob], ['스탠스', STANCE[A.stance?.text] || A.stance?.text],
+    ['체급', wc(A.weightClass?.text)], ['소속팀', A.association?.name], ['스타일', A.displayFightingStyle], ['국적', A.citizenship || A.flag?.alt]];
+  return cacheDetail(key, { at:Date.now(), src:'ESPN', sum: rec.w||rec.l ? `${rec.w}-${rec.l}-${rec.d}` : sumTxt, rec, hist, st, bio, nick:A.nickname || '' });
+}
+const DEC = { unanimous:'만장일치', split:'스플릿', majority:'다수' };
+function espnMethod(r){
+  const n = String(r?.name||'').toLowerCase(), d = String(r?.displayName||'');
+  if (/^kotko|^ko|^tko/.test(n)) return 'KO/TKO';
+  if (/^sub/.test(n)) return '서브미션';
+  if (/^dec/.test(n) || /^decision/i.test(d)) { const k = Object.keys(DEC).find(k => d.toLowerCase().includes(k)); return '판정' + (k ? ` (${DEC[k]})` : ''); }
+  if (/draw/.test(n)) return '무승부';
+  if (/^dq|disq/.test(n)) return '실격';
+  if (/contest/.test(n)) return 'NC';
+  return d;
+}
+const shDate = s => { const m = /([A-Za-z]{3}) \/ (\d{1,2}) \/ (\d{4})/.exec(s||''); const mo = m && MON[m[1]]; return mo ? `${m[3]}-${String(mo).padStart(2,'0')}-${m[2].padStart(2,'0')}` : ''; };
+function sherdogDetail(fid){
+  const p = BC.fighters[fid]; if (!p) return null;
+  const rec = { w:p.w, l:p.l, d:p.d, nc:p.nc, ko:p.ko, sub:p.sub, dec:p.dec, lko:p.lko, lsub:p.lsub, ldec:p.ldec };
+  const hist = (p.hist||[]).map(h => { const m = bcMethod(h.method); return { res: {win:'W',loss:'L',draw:'D',nc:'NC',no_contest:'NC'}[h.res] || '', opp:h.opp, oppId:'', date: shDate(h.date), ev:h.ev, method: m.k + (m.det ? ` (${m.det})` : ''), rd:h.rd, time:h.time, title:false }; }).filter(h => h.res);
+  const bio = [['키', p.height ? `${p.height}${p.heightCm ? ` (${p.heightCm}cm)` : ''}` : ''], ['체중', p.weight], ['나이', p.age && p.age!=='N/A' ? `${p.age}세${p.born ? ' · '+p.born : ''}` : p.born], ['체급', wc(p.cls)], ['소속팀', p.team], ['국적', p.nat]];
+  return { at:Date.now(), src:'Sherdog', sum:`${p.w}-${p.l}-${p.d}`, rec, hist, st:null, bio, nick:p.nick || '' };
+}
+async function wikiDetail(n, boxing){
+  const key = 'w'+keyOf(n), hit = cachedDetail(key, 7*864e5); if (hit) return hit;
+  const tries = [...new Set([WIKI_TITLE[n] || n, boxing ? n+' (boxer)' : n+' (fighter)'])];
+  for (const t of tries) {
+    let j; try { j = await getJSON(`https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(t)}&redirects=1&prop=text&section=0&format=json&formatversion=2&origin=*`); } catch { continue; }
+    const box = new DOMParser().parseFromString(j.parse?.text || '', 'text/html').querySelector('.infobox'); if (!box) continue;
+    box.querySelectorAll('style,sup,.noprint').forEach(x => x.remove());
+    const R = {}, B = {}; let sec = '', grp = '';
+    box.querySelectorAll('tr').forEach(tr => {
+      const th = tr.querySelector('th'), td = tr.querySelector('td'); if (!th) return;
+      const lab = clean(th.textContent).toLowerCase();
+      if (!td) { sec = lab; grp = ''; return; }
+      const val = clean(td.textContent);
+      if (/record/.test(sec)) { if (/^(wins|losses)$/.test(lab)) grp = lab; R[(/^by /.test(lab) ? grp+' ' : '') + lab] = parseInt(val, 10) || 0; }
+      else B[lab] = val;
+    });
+    if (!('wins' in R)) continue;
+    const g = (...ks) => ks.map(k => R[k]).find(v => v != null) || 0;
+    const rec = { w:g('wins'), l:g('losses'), d:g('draws'), nc:g('no contests'),
+      ko: g('wins by knockout', 'wins by ko', 'win by ko', 'wins by ko/tko'), sub:g('wins by submission'), dec:g('wins by decision'),
+      lko:g('losses by knockout', 'losses by ko', 'loss by ko'), lsub:g('losses by submission'), ldec:g('losses by decision') };
+    const bio = [['키', B.height], ['리치', B.reach], ['나이', (b => { const d = /(\d{4})-(\d\d)-(\d\d)/.exec(b), a = d && [0, Math.floor((Date.now() - Date.UTC(+d[1], d[2]-1, +d[3])) / (365.2425*864e5))]; return d ? `${a ? a[1]+'세 · ' : ''}${d[1]}.${d[2]}.${d[3]}` : b.slice(0, 40); })(B.born||'')], ['스탠스', STANCE[B.stance] || B.stance], ['국적', B.nationality], ['체급', B.division ? wc(B.division.split(/[\s,(]{2,}/)[0]) : '']];
+    return cacheDetail(key, { at:Date.now(), src:'위키백과', sum:`${rec.w}-${rec.l}-${rec.d}`, rec, hist:[], st:null, bio, boxing:/boxing/.test(Object.keys(R).join(' ')) || !!boxing });
+  }
+  return cacheDetail(key, { at:Date.now(), src:'', none:true });
+}
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+function detailHTML(D, me){
+  if (!D || D.none) return '';
+  const r = D.rec || {}, bio = (D.bio||[]).filter(x => x[1]);
+  const seg = (x, n, c) => x ? `<i class="${c}" style="width:${(x/n*100).toFixed(1)}%"></i>` : '';
+  const bar = (lab, n, ko, sub, dec, cls) => n ? `<div class="brk ${cls}"><div class="bh"><b>${n}</b><span>${lab}</span></div>
+      <div class="bar" role="img" aria-label="${lab} ${n}: KO/TKO ${ko}, 서브미션 ${sub}, 판정 ${dec}">${seg(ko,n,'ko')}${seg(sub,n,'sub')}${seg(dec,n,'dec')}</div>
+      <div class="bl"><span><i class="ko"></i>${D.boxing?'KO':'KO/TKO'} ${ko}</span>${D.boxing?'':`<span><i class="sub"></i>서브미션 ${sub}</span>`}<span><i class="dec"></i>판정 ${dec}</span></div></div>` : '';
+  const other = [r.d ? `무승부 ${r.d}` : '', r.nc ? `무효 ${r.nc}` : '', (r.tw || r.tl) ? `타이틀전 ${r.tw}승 ${r.tl}패` : ''].filter(Boolean).join(' · ');
+  const decW = D.boxing ? Math.max(0, r.w - r.ko) : r.dec, decL = D.boxing ? Math.max(0, r.l - r.lko) : r.ldec;
+  const st = D.st && D.st.n ? D.st : null;
+  const res = x => x.res === 'W' ? '<b class="win">승</b>' : x.res === 'L' ? '<b style="color:var(--red)">패</b>' : x.res === 'D' ? '<b style="color:var(--muted)">무</b>' : '<b style="color:var(--muted)">NC</b>';
+  const when = d => /^\d{4}-\d\d-\d\d/.test(d||'') ? `${d.slice(0,4)}.${d.slice(5,7)}.${d.slice(8,10)}` : esc(d||'');
+  const hrow = x => `<button class="row hrow" data-f="${esc(x.opp)}"><span class="datebox" style="width:30px">${res(x)}</span><span class="main"><span class="t">vs ${nameHTML(x.opp)}</span>
+      <span class="s">${x.title?'<span class="tt">🏆 타이틀전</span> · ':''}${x.method?esc(x.method)+' · ':''}${x.rd?`R${esc(x.rd)}${x.time?' '+esc(x.time):''} · `:''}${when(x.date)}${x.ev?' · '+esc(x.ev):''}</span></span>${chev}</button>`;
+  const streak = (() => { const h = D.hist||[]; if (!h.length) return ''; const f = h[0].res; let n = 0; for (const x of h) { if (x.res === f) n++; else break; } return n >= 2 && (f==='W'||f==='L') ? `${n}연${f==='W'?'승':'패'}` : ''; })();
+  return `${bio.length ? `<div class="card-sec">프로필</div><div class="bio">${bio.map(([k,v]) => `<div><small>${k}</small><b>${esc(v)}</b></div>`).join('')}</div>` : ''}
+    ${(r.w || r.l) ? `<div class="card-sec">승패 내역</div><div class="brkwrap">${bar('승', r.w, r.ko, r.sub||0, decW, 'w')}${bar('패', r.l, r.lko, r.lsub||0, decL, 'l')}${other||streak?`<p class="brk-o">${[streak, other].filter(Boolean).join(' · ')}</p>`:''}</div>` : ''}
+    ${st ? `<div class="card-sec">경기 기록 · ESPN 집계 ${st.n}경기</div><div class="stats st4">
+      <div class="stat"><b>${pct(st.ssl, st.ssa)}%</b><small>유효타 적중률</small></div>
+      <div class="stat"><b>${(st.ssl/st.n).toFixed(1)}</b><small>경기당 유효타</small></div>
+      <div class="stat"><b>${st.kd}</b><small>넉다운</small></div>
+      <div class="stat"><b>${st.tdl}<span class="of">/${st.tda}</span></b><small>테이크다운</small></div>
+      <div class="stat"><b>${st.tda ? pct(st.tdl, st.tda)+'%' : '—'}</b><small>테이크다운 성공률</small></div>
+      <div class="stat"><b>${st.sm}</b><small>서브미션 시도</small></div></div>` : ''}
+    ${(D.hist||[]).length ? `<div class="card-sec">전체 경기 기록 · ${D.hist.length}경기</div><div class="group">${D.hist.map(hrow).join('')}</div>` : ''}
+    <p class="foot">상세 기록 출처: ${esc(D.src)}${D.src==='ESPN'?' (ESPN이 중계한 경기 기준)':''}.</p>`;
+}
+
 /* ───────── 데이터 로딩 */
 const state = { upcoming:[], recent:[], live:[], lastSync:0, err:false, tab:'schedule',
   schedOrg:'all', year:NOW_Y, resOrg:'all', legendK:'all', fK:'all', q:'',
@@ -222,6 +416,8 @@ async function loadUpcoming(){
   const res = await Promise.allSettled(LIVE_LEAGUES.map(lg =>
     getJSON(`${API}${LEAGUES[lg].path}/scoreboard?dates=${from}-${to}&limit=200`).then(j => (j.events||[]).map(ev => put(norm(ev, lg))))
   ));
+  const lo = Date.now() - 45*864e5, hi = Date.now() + 200*864e5;
+  res.push(...await Promise.allSettled([loadBC().then(evs => evs.filter(e => { const t = new Date(e.date).getTime(); return t > lo && t < hi; }))]));
   const ok = res.filter(r=>r.status==='fulfilled').flatMap(r=>r.value);
   if (!ok.length && res.every(r=>r.status==='rejected')) throw new Error('feed');
   ok.sort((a,b)=>new Date(a.date)-new Date(b.date));
@@ -245,8 +441,9 @@ const yearMem = new Map();
 async function loadYear(lg, y, force){
   const k = `y:${lg}:${y}`;
   if (!force && yearMem.has(k)) return yearMem.get(k);
-  const cached = store.get(k);
+  const cached = LEAGUES[lg].local ? null : store.get(k);
   const fresh = cached && (y < NOW_Y - 0 ? true : Date.now() - cached.at < 10*60e3);
+  if (LEAGUES[lg].local) { const evs = (await loadBC(force)).filter(e => e.date.startsWith(String(y))); yearMem.set(k, evs); return evs; }
   if (cached && fresh && !force) { const evs = cached.events.map(put); yearMem.set(k, evs); return evs; }
   try {
     const j = await getJSON(`${API}${LEAGUES[lg].path}/scoreboard?dates=${y}&limit=300`, 20000);
@@ -279,19 +476,20 @@ const shot = id => id ? `https://a.espncdn.com/i/headshots/mma/players/full/${id
 function avatar(n, id){
   const f = famous(n), p = PEOPLE.get(keyOf(n)); id = id || f?.id || p?.id;
   const ini = esc((disp(n)||'?').replace(/[^\p{L}]/gu,'').slice(0,1));
-  const src = id ? shot(id) : (WIKI_OK.has(keyOf(n)) ? wikiImg(n) : '');
-  return `<span class="avatar">${ini}<img ${src?`src="${esc(src)}"`:''} class="${id?'':'wk'}" ${id?'':'data-wk="1"'} data-pname="${esc(n)}" alt="" loading="lazy" onerror="__imgFail(this)"></span>`;
+  const bi = !id && bcImg(n);
+  const src = id ? shot(id) : bi || (WIKI_OK.has(keyOf(n)) ? wikiImg(n) : '');
+  return `<span class="avatar">${ini}<img ${src?`src="${esc(src)}"`:''} class="${id||bi?'':'wk'}${bi?' sd':''}" ${id?'':'data-wk="1"'} data-pname="${esc(n)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="__imgFail(this)"></span>`;
 }
 const orgBadge = lg => `<span class="org ${lg}">${esc(LEAGUES[lg]?.label || (lg==='boxing'?'복싱':lg))}</span>`;
 const mClass = m => /KO|TKO/.test(m) ? 'mthd ko' : /서브미션/.test(m) ? 'mthd sub' : 'mthd';
 const WCL = Object.fromEntries(Object.entries(WC).map(([k,v]) => [k.toLowerCase(), v]));
-const wc = s => WC[s] || WCL[String(s||'').toLowerCase()] || s;
+const wc = s => { const c = /^(\d+)\s*lb\s*catchweight$/i.exec(String(s||'')); return c ? `계약 체중 ${c[1]}lb` : WC[s] || WCL[String(s||'').toLowerCase()] || s; };
 function resultLine(f){
   if (f.state==='in') return `<span class="live">LIVE</span> <span>${f.rd?f.rd+'라운드':'진행 중'}</span>`;
   if (!f.done) return '';
   const w = f.a.w ? f.a : f.b.w ? f.b : null;
   const m = f.method || (w ? '' : '무승부/NC');
-  return `${w?`<span class="win">${esc(disp(w.name))} 승</span>`:''}${m?`<span class="${mClass(m)}">${esc(m)}</span>`:''}${f.rd?`<span>R${f.rd} ${esc(f.clk)}</span>`:''}`;
+  return `${w?`<span class="win">${esc(disp(w.name))} 승</span>`:''}${m?`<span class="${mClass(m)}">${esc(m)}</span>`:''}${f.det?`<span>${esc(f.det)}</span>`:''}${f.rd?`<span>R${f.rd} ${esc(f.clk)}</span>`:''}`;
 }
 const chev = '<svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m1.5 1.5 5 5-5 5"/></svg>';
 const star = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.8z"/></svg>';
@@ -312,7 +510,7 @@ function eventRow(e, { results=false } = {}){
 /* 인기 매치 카드 */
 function popCard(e, f){
   const t = titleOf(f, e), w = f.done ? (f.a.w ? f.a : f.b.w ? f.b : null) : null;
-  const side = s => `<div class="${w && w!==s ? 'lost' : ''}">${avatar(s.name, s.id)}<div class="n">${nameHTML(s.name)}</div><div class="r">${esc(s.rec||'')}</div></div>`;
+  const side = s => `<div class="${w && w!==s ? 'lost' : ''}">${avatar(s.name, s.id)}<div class="n">${nameHTML(s.name)}</div><div class="r">${recOf(s.name, s.rec, s.id)}</div></div>`;
   return `<button class="pc" data-ev="${e.lg}:${e.id}">
     <div class="pm">${orgBadge(e.lg)}<span>${kst(f.date||e.date,{month:'numeric',day:'numeric',weekday:'short'})}</span><span>· ${esc(wc(f.wc))}</span></div>
     <div class="duo">${side(f.a)}<span class="vs">VS</span>${side(f.b)}</div>
@@ -359,7 +557,7 @@ function groupByMonth(list, rowFn){
 
 /* ───────── 일정 탭 */
 function renderSchedule(){
-  const orgs = ['all', ...LIVE_LEAGUES];
+  const orgs = ['all', ...SCHED_ORGS];
   const cnt = lg => state.upcoming.filter(e => lg==='all' || e.lg===lg).length;
   $('#schedOrgs').innerHTML = orgs.map(o => `<button class="chip" aria-pressed="${state.schedOrg===o}" data-sorg="${o}">${o==='all'?'전체':LEAGUES[o].label}<span class="n">${cnt(o)}</span></button>`).join('');
   const f = e => state.schedOrg==='all' || e.lg===state.schedOrg;
@@ -383,7 +581,7 @@ function renderSchedule(){
   $('#recentWrap').innerHTML =
     (recent.length ? `<div class="section-h"><h2>최근 결과</h2><button class="s" data-goto="results" style="color:var(--blue);font-size:14px">모두 보기</button></div><div class="group">${recent.slice(0,4).map(e=>eventRow(e,{results:true})).join('')}</div>` : '') +
     (state.schedOrg==='all' ? `<div class="section-h"><h2>복싱</h2><span>주요 경기 기록</span></div><div class="group">${boxing.map(boxRow).join('')}</div>
-    <p class="foot">UFC·PFL·RIZIN 일정과 결과는 ESPN 공개 피드에서 자동으로 받아와요. 경기 중에는 30초, 평소에는 3분마다 새로 고칩니다. 복싱은 실시간 피드가 없어 주요 경기만 직접 기록해요.</p>` : '');
+    <p class="foot">UFC·PFL·RIZIN 일정과 결과는 ESPN 공개 피드에서 자동으로 받아와요. 경기 중에는 30초, 평소에는 3분마다 새로 고칩니다. 블랙컴뱃은 Sherdog 기록을 6시간마다 받아와요${BC.updated?` (마지막 ${ago(new Date(BC.updated).getTime())})`:''}. 복싱은 실시간 피드가 없어 주요 경기만 직접 기록해요.</p>` : '');
   tickCountdown(); initStrips();
 }
 function poster(e, m = mainOf(e)){
@@ -394,9 +592,9 @@ function poster(e, m = mainOf(e)){
   const longest = Math.max(surOf(m.a.name).length, surOf(m.b.name).length);
   const fs = `style="font-size:min(${Math.min(44, Math.floor(300/Math.max(longest,6)))}px, ${Math.min(9.5, +(70/Math.max(longest,6)).toFixed(2))}vw)"`;
   const sur = n => `<span class="sur" ${fs}>${esc(surOf(n))}</span>`;
-  const face = (s, cls) => { const id = s.id || PEOPLE.get(keyOf(s.name))?.id;
-    return `<div class="face ${cls}">${id?`<img src="${shot(id)}" alt="" onerror="this.insertAdjacentHTML('afterend','<span class=ph aria-hidden=true>${esc((s.name||'?')[0])}</span>');this.remove()">`:`<span class="ph" aria-hidden="true">${esc((s.name||'?')[0])}</span>`}</div>`; };
-  const sm = s => { const f = famous(s.name); return `<small>${f?`${esc(f.ko)} ${f.mark}<br>${esc(f.tag)}`:esc(s.country||'')}${s.rec?`<br><b style="font-family:var(--f-display);font-size:15px">${esc(s.rec)}</b>`:''}</small>`; };
+  const face = (s, cls) => { const id = s.id || PEOPLE.get(keyOf(s.name))?.id, src = id ? shot(id) : bcImg(s.name);
+    return `<div class="face ${cls}">${src?`<img src="${esc(src)}" referrerpolicy="no-referrer" class="${id?'':'sd'}" alt="" onerror="this.insertAdjacentHTML('afterend','<span class=ph aria-hidden=true>${esc((s.name||'?')[0])}</span>');this.remove()">`:`<span class="ph" aria-hidden="true">${esc((s.name||'?')[0])}</span>`}</div>`; };
+  const sm = s => { const f = famous(s.name), r = recOf(s.name, s.rec, s.id); return `<small>${f?`${esc(f.ko)} ${f.mark}<br>${esc(f.tag)}`:esc(s.country||'')}${r?`<br><b style="font-family:var(--f-display);font-size:15px">${r}</b>`:''}</small>`; };
   const enter = !poster.shown; poster.shown = true;
   return `<button class="poster ${enter?'enter':''} ${live?'is-live':''}" data-ev="${e.lg}:${e.id}" aria-label="${esc(e.name)} 자세히 보기">
     <div class="halves"></div><div class="grain"></div>
@@ -429,7 +627,7 @@ let resToken = 0;
 function renderResultsChrome(){
   const ys = []; for (let y = NOW_Y; y >= FIRST_Y; y--) ys.push(y);
   $('#years').innerHTML = ys.map(y => `<button class="chip" aria-pressed="${state.year===y}" data-year="${y}">${y}</button>`).join('');
-  const orgs = ['all','ufc','pfl','bellator','rizin','boxing'].filter(o => o==='all'||o==='boxing'|| (LEAGUES[o].from<=state.year && (!LEAGUES[o].to||LEAGUES[o].to>=state.year)));
+  const orgs = ['all','ufc','pfl','bellator','rizin','bc','boxing'].filter(o => o==='all'||o==='boxing'|| (LEAGUES[o].from<=state.year && (!LEAGUES[o].to||LEAGUES[o].to>=state.year)));
   if (!orgs.includes(state.resOrg)) state.resOrg = 'all';
   $('#resOrgs').innerHTML = orgs.map(o => `<button class="chip" aria-pressed="${state.resOrg===o}" data-rorg="${o}">${o==='all'?'전체':o==='boxing'?'복싱':LEAGUES[o].label}</button>`).join('');
 }
@@ -510,7 +708,7 @@ function upcomingPeople(){
 function fighterRow(n, extra){
   const f = famous(n), p = PEOPLE.get(keyOf(n)), fav = state.favs.has(keyOf(n));
   const sub = extra || (f ? `${f.nick?`"${esc(f.nick)}" · `:''}${esc(f.org)} ${esc(f.div)}` : esc(p?.country||''));
-  return `<div class="row" style="padding-right:6px"><button class="row" data-f="${esc(n)}" style="padding:0;flex:1;min-width:0">${avatar(n)}<span class="main"><span class="t">${nameHTML(n,{tag:!!f})}</span><span class="s">${sub}${p?.rec?` · ${esc(p.rec)}`:''}</span></span></button>
+  return `<div class="row" style="padding-right:6px"><button class="row" data-f="${esc(n)}" style="padding:0;flex:1;min-width:0">${avatar(n)}<span class="main"><span class="t">${nameHTML(n,{tag:!!f})}</span><span class="s">${sub}${(r => r ? ` · ${r}` : '')(recOf(n, p?.rec, p?.id))}</span></span></button>
     <button class="fav" data-fav="${esc(n)}" aria-pressed="${fav}" aria-label="${esc(disp(n))} 즐겨찾기">${fav?star:starO}</button></div>`;
 }
 function renderFighters(){
@@ -526,7 +724,7 @@ function renderFighters(){
     if (stars.length) html += `<div class="section-h"><h2>레전드 & 스타</h2><span>${stars.length}명</span></div><div class="group">${stars.map(f=>fighterRow(f.name)).join('')}</div>`;
     if (k !== 'boxing') {
       const ups = upcomingPeople().filter(s => !famous(s.name) && match(s.name)).sort((a,b)=>new Date(a.ev.date)-new Date(b.ev.date));
-      if (ups.length) html += `<div class="section-h"><h2>출전 예정 선수</h2><span>${ups.length}명</span></div><div class="group">${ups.map(s=>fighterRow(s.name, `${kst(s.ev.date,{month:'numeric',day:'numeric'})} ${esc(LEAGUES[s.ev.lg].label)} · ${esc(wc(s.f.wc))}`)).join('')}</div>`;
+      if (ups.length) html += `<div class="section-h"><h2>출전 예정 선수</h2><span>${ups.length}명</span></div><div class="group">${ups.map(s=>fighterRow(s.name, `${kst(s.ev.date,{month:'numeric',day:'numeric'})} ${esc(LEAGUES[s.ev.lg]?.label||'')} · ${esc(wc(s.f.wc))}`)).join('')}</div>`;
       if (qRaw) {
         const shown = new Set([...stars.map(f=>keyOf(f.name)), ...ups.map(s=>keyOf(s.name))]);
         const others = [...PEOPLE.values()].filter(p => !shown.has(keyOf(p.name)) && match(p.name)).slice(0,40);
@@ -558,7 +756,7 @@ function closeSheet(){
 function fightHTML(f, isMain, e){
   const side = (s, c) => { const lost = f.done && (f.a.w||f.b.w) && !s.w;
     return `<button class="side ${c} ${lost?'lost':''}" data-f="${esc(s.name)}">${avatar(s.name, s.id)}<span class="who"><span class="nm">${nameHTML(s.name)}${s.w?'<span class="wflag">승</span>':''}</span>
-      <span class="rec">${s.flag?`<img src="${esc(s.flag)}" alt="${esc(s.country)}" loading="lazy">`:''}${esc(s.rec||'—')}</span></span></button>`; };
+      <span class="rec">${s.flag?`<img src="${esc(s.flag)}" alt="${esc(s.country)}" loading="lazy">`:''}${recOf(s.name, s.rec, s.id) || '—'}</span></span></button>`; };
   return `<div class="fight">${f.legend?`<button class="legend-ribbon" data-legend="${f.legend.i}">★ 레전드 매치</button>`:''}
     <div class="meta">${isMain?'<span class="mthd" style="background:var(--ink);color:var(--bg)">메인 이벤트</span>':''}${titleBadge(titleOf(f, e))}<span class="wc">${esc(wc(f.wc))}</span><span>${f.rounds}라운드</span></div>
     <div class="vsrow">${side(f.a,'a')}<span class="vsmid">VS</span>${side(f.b,'b')}</div>
@@ -603,7 +801,9 @@ function openFighter(n){
   const titleFights = all.filter(x => x.f.done && titleOf(x.f, x.e)).length;
   const boxing = BOXING_RESULTS.filter(b => keyOf(b.a)===k || keyOf(b.b)===k);
   const wl = past.reduce((a,x)=>{ const me = keyOf(x.f.a.name)===k ? x.f.a : x.f.b; if (me.w) a.w++; else if (x.f.a.w||x.f.b.w) a.l++; return a; }, {w:0,l:0});
-  const rec = p?.rec || (f?.name==='Floyd Mayweather' ? '50-0-0' : f?.name==='Khabib Nurmagomedov' ? '29-0-0' : '');
+  const id = idOf(n, p?.id), fid = BC.byName.get(k), sd = fid && sherdogDetail(fid);
+  const pre = sd || (id ? cachedDetail('e'+id, 12*36e5) : cachedDetail('w'+k, 7*864e5));
+  const rec = pre?.sum || p?.rec || (f?.name==='Floyd Mayweather' ? '50-0-0' : f?.name==='Khabib Nurmagomedov' ? '29-0-0' : '');
   const pastRow = x => { const me = keyOf(x.f.a.name)===k ? x.f.a : x.f.b, op = me===x.f.a ? x.f.b : x.f.a;
     const r = me.w ? '<b class="win">승</b>' : (x.f.a.w||x.f.b.w) ? '<b style="color:var(--red)">패</b>' : '<b style="color:var(--muted)">무</b>';
     return `<button class="row" data-ev="${x.e.lg}:${x.e.id}"><span class="datebox" style="width:30px">${r}</span><span class="main"><span class="t">vs ${nameHTML(op.name)}</span><span class="s">${titleOf(x.f,x.e)?'🏆 '+esc(titleOf(x.f,x.e).k)+' · ':''}${x.f.method?esc(x.f.method)+' · ':''}${kst(x.e.date,{year:'numeric',month:'short',day:'numeric'})} · ${esc(x.e.name)}</span></span>${chev}</button>`; };
@@ -611,15 +811,26 @@ function openFighter(n){
       <div class="nick">${esc(n)}${f?.nick?` · "${esc(f.nick)}"`:''}</div>
       <div style="margin-top:6px">${f?`<span class="tag" style="margin:0">${esc(f.tag)}</span>`:''} ${p?.flag?`<img src="${esc(p.flag)}" alt="${esc(p.country)}" style="display:inline;width:18px;height:12px;border-radius:2px;vertical-align:-1px;margin-left:4px">`:''} <span class="s" style="font-size:13px;color:var(--muted)">${esc(f?`${f.org} ${f.div}`:(p?.country||''))}</span></div></div></div>
     <div style="display:flex;gap:8px;margin:0 16px 14px"><button class="chip" data-fav="${esc(n)}" aria-pressed="${fav}" style="height:38px">${fav?'★ 즐겨찾기됨':'☆ 즐겨찾기'}</button></div>
-    <div class="stats"><div class="stat"><b>${esc(rec||'—')}</b><small>통산 전적</small></div><div class="stat"><b>${past.length?`${wl.w}-${wl.l}`:'—'}</b><small>앱 기록 승-패</small></div><div class="stat"><b>${titleFights || legends.length}</b><small>${titleFights ? '타이틀전(앱 기록)' : '레전드 매치'}</small></div></div>
+    <div class="stats"><div class="stat"><b id="pfRec">${esc(rec||'—')}</b><small>통산 전적</small></div><div class="stat"><b>${past.length?`${wl.w}-${wl.l}`:'—'}</b><small>앱 기록 승-패</small></div><div class="stat"><b>${titleFights || legends.length}</b><small>${titleFights ? '타이틀전(앱 기록)' : '레전드 매치'}</small></div></div>
     ${(CHAMP.get(k)||[]).length?`<div class="note champ-note">🏆 현 챔피언 · ${(CHAMP.get(k)||[]).map(c=>`${c.org==='UFC'?'UFC':esc(c.org)} ${esc(wc(c.div))}`).join(', ')}</div>`:''}
     ${f?`<div class="note">${esc(f.note)}</div>`:''}
     ${next?`<div class="card-sec">다음 경기</div><div class="group"><button class="row" data-ev="${next.e.lg}:${next.e.id}">${orgBadge(next.e.lg)}<span class="main"><span class="t">vs ${nameHTML(keyOf(next.f.a.name)===k?next.f.b.name:next.f.a.name)}</span><span class="s">${kst(next.e.date,{month:'long',day:'numeric',weekday:'short'})} · ${esc(next.e.name)}</span></span>${chev}</button></div>`:''}
     ${legends.length?`<div class="card-sec">레전드 매치</div><div class="group">${legends.map(l=>`<button class="row" data-legend="${l.i}"><span class="main"><span class="t" style="color:var(--gold)">★ ${esc(l.hook)}</span><span class="s">${esc(disp(l.a))} ${l.draw?'vs':'def.'} ${esc(disp(l.b))} · ${l.date.slice(0,4)}</span></span>${chev}</button>`).join('')}</div>`:''}
-    ${past.length?`<div class="card-sec">최근 경기</div><div class="group">${past.slice(0,10).map(pastRow).join('')}</div>`:''}
+    <div id="pfDetail" data-k="${esc(k)}">${pre ? detailHTML(pre) : '<div class="card-sec">상세 기록</div><div class="skeleton" style="height:120px"></div>'}</div>
+    ${past.length && !(pre?.hist||[]).length ?`<div id="pfPast"><div class="card-sec">최근 경기</div><div class="group">${past.slice(0,10).map(pastRow).join('')}</div></div>`:''}
     ${boxing.length?`<div class="card-sec">복싱 기록</div><div class="group">${boxing.map(boxRow).join('')}</div>`:''}
-    ${!past.length && !legends.length && !next && f?.sport!=='boxing' ? `<p class="foot">결과 탭에서 연도를 열어 보면 그 해의 경기 기록이 이 선수 페이지에 함께 쌓여요.</p>`:''}`;
+`;
   openSheet(f?.ko||n, html, $('#sheet').classList.contains('on'));
+  if (pre) return;
+  const job = id ? espnDetail(id).catch(() => wikiDetail(n, f?.sport==='boxing')) : wikiDetail(n, f?.sport==='boxing');
+  job.catch(() => null).then(D => {
+    const box = $('#pfDetail'); if (!box || box.dataset.k !== k) return;
+    box.innerHTML = D && !D.none ? detailHTML(D) : (past.length || legends.length ? '' : '<p class="foot">이 선수의 상세 기록을 찾지 못했어요.</p>');
+    if (D?.sum && $('#pfRec')?.textContent === '—') $('#pfRec').textContent = D.sum;
+    if ((D?.hist||[]).length) $('#pfPast')?.remove();
+    applyWiki();
+    const top = sheetStack[sheetStack.length-1]; if (top) top.html = $('#sheetBody').innerHTML;
+  });
 }
 
 /* ───────── 동기화 */
@@ -644,6 +855,7 @@ const ago = t => { const s = (Date.now()-t)/1000; return s < 60 ? '방금' : s <
 async function sync(manual){
   clearTimeout(pollT); setSync('busy'); $('#refreshBtn').classList.add('spin');
   try {
+    if (manual) BC.at = 0;
     await loadUpcoming(); state.err = false; state.lastSync = Date.now();
     if (state.tab==='results' && state.year===NOW_Y) renderResults(true);
     if (manual) toast('최신 정보로 업데이트했어요');
